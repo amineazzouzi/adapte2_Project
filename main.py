@@ -48,6 +48,7 @@ def parse_args():
     p.add_argument("--gpu-batch-size", type=int, default=d.gpu_batch_size)
     p.add_argument("--freq-chunk", type=int, default=d.freq_chunk)
     p.add_argument("--num-workers", type=int, default=d.num_workers)
+    p.add_argument("--project-dir", default=dc.project_dir)
     p.add_argument("--corr-window-s", type=float, default=dc.corr_window_s)
     p.add_argument("--hist-bin-min", type=int, default=dc.hist_bin_min)
     p.add_argument("--corr-ncc-type-threshold", type=float, default=dc.ncc_type_threshold)
@@ -93,6 +94,7 @@ def main():
     if len(jobs) >= 2:
         print(f"\n{'='*68}\nCORRÉLATION — {len(jobs)} source(s)\n{'='*68}\n")
         corr_config = CorrelationConfig(
+            project_dir=args.project_dir,
             signals=[{"boitier": j["boitier"], "voie": j["voie"]} for j in jobs],
             corr_window_s=args.corr_window_s,
             hist_bin_min=args.hist_bin_min,
