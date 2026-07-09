@@ -228,7 +228,7 @@ def plot_global_timeline(signal_profile, output_dir):
     palette = TYPE_COLORS
     if n_clust > len(palette):
         import matplotlib.colors as mcolors
-        extra_cmap = plt.cm.get_cmap('tab20')
+        extra_cmap = matplotlib.colormaps['tab20']
         palette = palette + [mcolors.to_hex(extra_cmap(i)) for i in range(20)]
     color_for = lambda cid: palette[cid % len(palette)]
 

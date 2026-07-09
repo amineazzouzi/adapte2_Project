@@ -40,7 +40,7 @@ def build_color_map(pairs):
     Chaque paire reçoit UNE couleur nettement distincte des autres — un
     type = une couleur, peu importe le signal.
     """
-    import matplotlib.pyplot as plt
+    import matplotlib as mpl
     import matplotlib.colors as mcolors
 
     # Palette à couleurs franchement distinctes (pas de resampling continu d'un
@@ -48,7 +48,7 @@ def build_color_map(pairs):
     # on réutilise TYPE_COLORS, puis on complète avec tab20 (discret) si besoin.
     palette = list(TYPE_COLORS)
     if len(pairs) > len(palette):
-        extra_cmap = plt.cm.get_cmap('tab20')
+        extra_cmap = mpl.colormaps['tab20']
         palette += [mcolors.to_hex(extra_cmap(i)) for i in range(20)]
 
     return {pair: palette[i % len(palette)] for i, pair in enumerate(pairs)}

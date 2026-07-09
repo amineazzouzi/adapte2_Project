@@ -87,7 +87,7 @@ def plot_temporal_overlap(profiles, output_dir, bin_width_min=1):
     bins  = pd.date_range(t_min.floor(freq), t_max.ceil(freq), freq=freq)
 
     unique_keys = list(dict.fromkeys(sig_key_from_signal_id(p['signal_id']) for p in profiles))
-    cmap        = plt.cm.get_cmap('tab10', max(len(unique_keys), 1))
+    cmap        = matplotlib.colormaps['tab10'].resampled(max(len(unique_keys), 1))
     key_to_color = {k: cmap(i) for i, k in enumerate(unique_keys)}
     seen_keys    = set()
 
