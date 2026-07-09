@@ -7,13 +7,18 @@ sur une ou plusieurs sources (signaux), sans passer par l'interface graphique
 directement en Python, adapté à une exécution headless (ex: job SLURM).
 
 Usage :
-  python3 main.py --signal boitier_1 1 2026-03-17 2026-03-18 \\
+  python3 main.py --signal boitier_1 1 2026-02-18 2026-03-18 \\
                    --signal boitier_2 1 2026-03-17
 
-Chaque --signal prend : BOITIER VOIE DATE [DATE ...] (répéter l'option pour
-ajouter d'autres sources). Toutes les dates d'un même signal sont combinées
-dans un seul rapport (comme oscillo_analysis.py --dates). La corrélation
-inter-signaux n'est lancée que si au moins 2 sources sont fournies.
+Chaque --signal prend : BOITIER VOIE DATE_DEBUT [DATE_FIN] (répéter l'option
+pour ajouter d'autres sources) :
+  - une seule date  -> un seul jour analysé.
+  - deux dates      -> TOUS les jours entre les deux (inclus), pas juste ces
+                        deux jours-là — même comportement que les champs
+                        "date début"/"date fin" de l'interface graphique.
+Toutes les dates d'un même signal sont combinées dans un seul rapport
+(comme oscillo_analysis.py --dates). La corrélation inter-signaux n'est
+lancée que si au moins 2 sources sont fournies.
 
 Zéro argument reproduit le comportement historique par défaut (les signaux
 de CorrelationConfig().signals, chacun sur SignalConfig().dates).
@@ -21,6 +26,7 @@ de CorrelationConfig().signals, chacun sur SignalConfig().dates).
 
 import argparse
 import sys
+from datetime import date as Date, timedelta
 
 from src.core.config import SignalConfig, CorrelationConfig
 from src.analysis.oscillo_pipeline import OscilloPipeline
@@ -34,11 +40,12 @@ def parse_args():
         description="Pipeline complet (analyse + corrélation) sur une ou plusieurs sources."
     )
     p.add_argument(
-        "--signal", nargs="+", metavar="BOITIER VOIE DATE [DATE ...]",
+        "--signal", nargs="+", metavar="BOITIER VOIE DATE_DEBUT [DATE_FIN]",
         action="append", dest="signals",
-        help="Une source à analyser : boitier, voie, puis une ou plusieurs dates "
-             "YYYY-MM-DD. Répéter l'option pour plusieurs sources. "
-             "Ex: --signal boitier_1 1 2026-03-17 2026-03-18",
+        help="Une source à analyser : boitier, voie, puis une date (un seul "
+             "jour) ou deux dates YYYY-MM-DD (tous les jours entre les deux, "
+             "inclus). Répéter l'option pour plusieurs sources. "
+             "Ex: --signal boitier_1 1 2026-02-18 2026-03-18",
     )
     p.add_argument("--data-lake-path", default=d.data_lake_path)
     p.add_argument("--ncc-threshold", type=float, default=d.ncc_threshold)
@@ -55,12 +62,31 @@ def parse_args():
     return p.parse_args()
 
 
+def _date_range(start_str, end_str):
+    """Tous les jours de start_str à end_str inclus (YYYY-MM-DD)."""
+    start, end = Date.fromisoformat(start_str), Date.fromisoformat(end_str)
+    if end < start:
+        raise ValueError(f"Date de fin ({end}) antérieure à la date de début ({start}).")
+    dates, cur = [], start
+    while cur <= end:
+        dates.append(cur.isoformat())
+        cur += timedelta(days=1)
+    return dates
+
+
 def resolve_jobs(args):
     if args.signals:
-        return [
-            {"boitier": s[0], "voie": int(s[1]), "dates": s[2:] or SignalConfig().dates}
-            for s in args.signals
-        ]
+        jobs = []
+        for s in args.signals:
+            date_tokens = s[2:]
+            if len(date_tokens) == 2:
+                dates = _date_range(*date_tokens)
+            elif date_tokens:
+                dates = date_tokens
+            else:
+                dates = SignalConfig().dates
+            jobs.append({"boitier": s[0], "voie": int(s[1]), "dates": dates})
+        return jobs
     return [
         {**sig, "dates": SignalConfig().dates}
         for sig in CorrelationConfig().signals
