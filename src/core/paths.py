@@ -15,9 +15,12 @@ def output_dir_for(boitier, voie):
     """
     Un seul dossier par signal (boitier+voie), quel que soit le nombre de
     jours combinés — pas un dossier par jour. Un nouveau run pour le même
-    signal remplace le précédent.
+    signal remplace le précédent. Nichés sous results/ (pas outputs/, qui
+    est déjà utilisé — et entièrement effacé à chaque run — par
+    trms_analysis.py) pour que tous les résultats oscillo soient faciles à
+    copier d'un bloc depuis un serveur distant.
     """
-    return f"outputs_{boitier}_v{voie}"
+    return f"results/outputs_{boitier}_v{voie}"
 
 
 def signal_id_for(boitier, voie, dates):

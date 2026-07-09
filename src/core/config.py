@@ -49,7 +49,7 @@ class CorrelationConfig:
         {"boitier": "boitier_1", "voie": 1},
         {"boitier": "boitier_2", "voie": 1},
     ])
-    output_dir_name: str = "outputs_correlation"
+    output_dir_name: str = "results/outputs_correlation"
     corr_window_s: float = 30.0
     hist_bin_min: int = 1
     ncc_type_threshold: float = 0.70

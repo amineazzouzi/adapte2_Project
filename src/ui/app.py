@@ -529,7 +529,7 @@ class App(tk.Tk):
     # ── Ouvrir les résultats ─────────────────────────────────────────────────
 
     def _open_results(self):
-        output_dir = os.path.join(SCRIPT_DIR, 'outputs_correlation')
+        output_dir = os.path.join(SCRIPT_DIR, 'results', 'outputs_correlation')
         if os.path.isdir(output_dir):
             subprocess.Popen(['xdg-open', output_dir])
         else:
@@ -537,7 +537,7 @@ class App(tk.Tk):
                                 f'Dossier attendu :\n{output_dir}')
 
     def _open_corr_report(self):
-        report = os.path.join(SCRIPT_DIR, 'outputs_correlation', 'rapport_correlation.html')
+        report = os.path.join(SCRIPT_DIR, 'results', 'outputs_correlation', 'rapport_correlation.html')
         if os.path.isfile(report):
             subprocess.Popen(['xdg-open', report])
         else:
