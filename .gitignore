@@ -5,3 +5,4 @@
 /outputs_correlation
 __pycache__/
 *.pyc
+/results

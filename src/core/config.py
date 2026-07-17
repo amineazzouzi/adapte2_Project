@@ -20,9 +20,9 @@ class SignalConfig:
     channel_index: int = 0
 
     # ── Seuils NCC / détection ───────────────────────────────────────
-    ncc_threshold: float = 0.40
+    ncc_threshold: float = 0.30
     ncc_max_lag: int = 5000
-    ncc_type_threshold: float = 0.4
+    ncc_type_threshold: float = 0.3
     n_freq_bins: int = 100000
 
     # ── Perf ──────────────────────────────────────────────────────────
