@@ -48,6 +48,9 @@ def parse_args():
     p.add_argument("--gpu-batch-size", type=int, default=d.gpu_batch_size)
     p.add_argument("--freq-chunk", type=int, default=d.freq_chunk)
     p.add_argument("--num-workers", type=int, default=d.num_workers)
+    p.add_argument("--type-hist-bin-min", type=int, default=d.type_hist_bin_min,
+                   help="Largeur des bins (minutes) de l'histogramme d'apparition "
+                        "par type dans rapport_types_detaille.html.")
     return p.parse_args()
 
 
@@ -70,6 +73,7 @@ def main():
         gpu_batch_size=args.gpu_batch_size,
         freq_chunk=args.freq_chunk,
         num_workers=args.num_workers,
+        type_hist_bin_min=args.type_hist_bin_min,
     )
     OscilloPipeline(config).run()
 

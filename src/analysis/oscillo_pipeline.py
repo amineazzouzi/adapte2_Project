@@ -16,8 +16,8 @@ from src.signal_processing.windowing import filter_anomaly_windows
 from src.signal_processing.filtering import lowpass_filter_batch
 from src.analysis.event_tracking import track_events_temporal_gpu, precompute_all_metrics_gpu
 from src.analysis.clustering import cluster_events_by_type, build_signal_profile
-from src.reporting.plots import plot_reference_windows
-from src.reporting.html_report import export_enriched_html
+from src.reporting.plots import plot_reference_windows, plot_all_type_summaries
+from src.reporting.html_report import export_enriched_html, export_type_summary_html
 
 
 class OscilloPipeline:
@@ -156,6 +156,12 @@ class OscilloPipeline:
             save_type_windows(signal_profile, output_dir)
             serialize_signal_profile(signal_profile, output_dir)
             print(f"⏱️  Analyse enrichie : {time.time()-t0:.2f}s")
+
+            print("--- Génération du rapport détaillé par type ---")
+            type_summaries = plot_all_type_summaries(
+                signal_profile, output_dir, bin_width_min=c.type_hist_bin_min
+            )
+            export_type_summary_html(signal_profile, type_summaries, output_dir)
 
         print("\n" + "=" * 70)
         print(f"✅ PIPELINE TERMINÉ EN {time.time()-t_start_total:.2f}s")

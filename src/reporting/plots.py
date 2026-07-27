@@ -3,6 +3,7 @@
 (oscillo_correlation.py)."""
 
 import os
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 
 import matplotlib
@@ -358,3 +359,94 @@ def plot_shared_type_comparisons(shared_types, output_dir):
     n_ok = sum(1 for p in paths if p)
     print(f"  -> {n_ok} graphique(s) comparatif(s) générés dans 'shared_types/'")
     return paths
+
+
+def plot_type_reference(cid, ref_window, count, output_dir):
+    """
+    Fenêtre de référence représentative d'un type (celle du 1er événement
+    chronologique du type). Retourne le chemin relatif à output_dir.
+    """
+    type_dir = os.path.join(output_dir, "type_refs")
+    os.makedirs(type_dir, exist_ok=True)
+
+    color = TYPE_COLORS[cid % len(TYPE_COLORS)]
+    fig, ax = plt.subplots(figsize=(6, 3))
+    ax.plot(ref_window, color=color, linewidth=0.8)
+    ax.set_title(f"Type {cid}")
+    ax.set_xlabel("Échantillons")
+    ax.set_ylabel("Amplitude")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    fpath = os.path.join(type_dir, f"type{cid}_ref.png")
+    fig.savefig(fpath, dpi=110, bbox_inches='tight')
+    plt.close(fig)
+    return os.path.relpath(fpath, output_dir)
+
+
+def plot_type_occurrence_histogram(cid, timestamps, t_min, t_max, output_dir, bin_width_min=10):
+    """
+    Histogramme d'apparition d'un type sur toute la durée d'analyse
+    (bins de bin_width_min minutes, grille commune t_min -> t_max).
+    """
+    type_dir = os.path.join(output_dir, "type_refs")
+    os.makedirs(type_dir, exist_ok=True)
+
+    color = TYPE_COLORS[cid % len(TYPE_COLORS)]
+    freq  = f'{bin_width_min}min'
+    bins  = pd.date_range(t_min.floor(freq), t_max.ceil(freq), freq=freq)
+
+    counts = pd.DatetimeIndex(timestamps).floor(freq).value_counts().sort_index()
+    counts = counts.reindex(bins[:-1], fill_value=0)
+
+    fig, ax = plt.subplots(figsize=(8, 3))
+    ax.bar(counts.index, counts.values, width=pd.Timedelta(minutes=bin_width_min),
+           color=color, alpha=0.85, align='edge')
+    ax.xaxis_date()
+    fmt = '%H:%M' if (t_max - t_min).total_seconds() < 86400 else '%d/%m %H:%M'
+    ax.xaxis.set_major_formatter(mdates.DateFormatter(fmt))
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='right')
+    ax.set_xlabel("Date / Heure")
+    ax.set_ylabel(f"Fenêtres / {bin_width_min} min")
+    ax.set_title(f"Type {cid} — apparition dans le temps")
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.grid(axis='y', linestyle='--', alpha=0.3)
+    plt.tight_layout()
+
+    fpath = os.path.join(type_dir, f"type{cid}_hist.png")
+    fig.savefig(fpath, dpi=110, bbox_inches='tight')
+    plt.close(fig)
+    return os.path.relpath(fpath, output_dir)
+
+
+def plot_all_type_summaries(signal_profile, output_dir, bin_width_min=10):
+    """
+    Génère, pour chaque type détecté, le plot de référence + l'histogramme
+    d'apparition (10 min par défaut) sur toute la durée du signal_profile.
+    Retourne {cid: (ref_rel_path, hist_rel_path, window_count)}.
+    """
+    events = signal_profile['events']
+    if not events or not signal_profile['t_start'] or not signal_profile['t_end']:
+        return {}
+
+    by_cluster = defaultdict(list)
+    for ev in events:
+        by_cluster[ev['cluster_id']].append(ev)
+
+    t_min, t_max = signal_profile['t_start'], signal_profile['t_end']
+
+    results = {}
+    for cid in sorted(by_cluster):
+        c_events  = sorted(by_cluster[cid], key=lambda e: e['ref_timestamp'])
+        ref_event = c_events[0]
+        count     = sum(e['window_count'] for e in c_events)
+        all_ts    = [t for e in c_events for t in e['window_timestamps']]
+
+        ref_rel  = plot_type_reference(cid, ref_event['ref_window'], count, output_dir)
+        hist_rel = plot_type_occurrence_histogram(
+            cid, all_ts, t_min, t_max, output_dir, bin_width_min=bin_width_min
+        )
+        results[cid] = (ref_rel, hist_rel, count)
+
+    print(f"  -> {len(results)} résumé(s) de type générés dans 'type_refs/'")
+    return results

@@ -28,6 +28,9 @@ class SignalConfig:
     # ── Filtrage passe-bas (avant calcul de similarité NCC) ──────────────
     lowpass_cutoff_hz: float = 3000.0
 
+    # ── Rapport détaillé par type ─────────────────────────────────────
+    type_hist_bin_min: int = 10
+
     # ── Perf ──────────────────────────────────────────────────────────
     gpu_batch_size: int = 2048
     freq_chunk: int = 100000

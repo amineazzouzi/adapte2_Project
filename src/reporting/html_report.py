@@ -92,6 +92,53 @@ def export_enriched_html(signal_profile, base_output_dir, ref_plot_paths=None):
     return path
 
 
+def export_type_summary_html(signal_profile, type_summaries, output_dir):
+    """
+    Rapport HTML dédié — une ligne par type détecté :
+    fenêtre de référence | nombre de fenêtres | histogramme d'apparition
+    (bins de 10 min) sur toute la durée d'analyse.
+    Fichier séparé de rapport_enrichi.html, ne le remplace pas.
+    """
+    html = [
+        "<html><head><meta charset='utf-8'>",
+        "<title>Rapport par Type — Analyse des Anomalies</title>",
+        "<style>",
+        "body{font-family:Arial,sans-serif;margin:20px;background:#f5f6fa}",
+        "h1{color:#2c3e50}",
+        ".card{background:#fff;margin-bottom:24px;padding:20px;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.12)}",
+        "table{border-collapse:collapse;width:100%}",
+        "th,td{border:1px solid #ddd;padding:10px;text-align:center;vertical-align:middle;font-size:13px}",
+        "th{background:#2c3e50;color:#fff}",
+        "tr:nth-child(even){background:#f9f9f9}",
+        "img{max-width:100%;height:auto;border:1px solid #ddd;border-radius:4px}",
+        ".count{font-size:28px;font-weight:bold;color:#2c3e50}",
+        "</style></head><body>",
+        f"<h1>Rapport par Type — {signal_profile['signal_id']}</h1>",
+        "<div class='card'>",
+        "<table>",
+        "<tr><th>Fenêtre de référence</th><th>Nombre de fenêtres</th>"
+        "<th>Apparition dans le temps (bins 10 min)</th></tr>",
+    ]
+
+    for cid in sorted(type_summaries):
+        ref_rel, hist_rel, count = type_summaries[cid]
+        html.append(
+            f"<tr>"
+            f"<td><img src='{ref_rel}' alt='Type {cid} — référence'/></td>"
+            f"<td class='count'>{count}</td>"
+            f"<td><img src='{hist_rel}' alt='Type {cid} — histogramme'/></td>"
+            f"</tr>"
+        )
+
+    html += ["</table>", "</div>", "</body></html>"]
+
+    path = os.path.join(output_dir, "rapport_types_detaille.html")
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(html))
+    print(f"--- Rapport par type : '{path}' ---")
+    return path
+
+
 def export_correlation_html(profiles, overlap_path, gantt_path, output_dir,
                             ncc_type_threshold, shared_types=None, shared_plot_paths=None,
                             gantt_map_html=None):
