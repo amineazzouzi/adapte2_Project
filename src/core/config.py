@@ -31,6 +31,10 @@ class SignalConfig:
     # ── Rapport détaillé par type ─────────────────────────────────────
     type_hist_bin_min: int = 10
 
+    # ── Base de types persistante (globale, entre tous les runs) ─────────
+    type_db_dir: str = "results/type_database"
+    global_type_ncc_threshold: float = 0.70
+
     # ── Perf ──────────────────────────────────────────────────────────
     gpu_batch_size: int = 2048
     freq_chunk: int = 100000

@@ -51,6 +51,13 @@ def parse_args():
     p.add_argument("--type-hist-bin-min", type=int, default=d.type_hist_bin_min,
                    help="Largeur des bins (minutes) de l'histogramme d'apparition "
                         "par type dans rapport_types_detaille.html.")
+    p.add_argument("--type-db-dir", default=d.type_db_dir,
+                   help="Dossier de la base de types persistante (globale, "
+                        "jamais effacée entre les runs).")
+    p.add_argument("--global-type-ncc-threshold", type=float,
+                   default=d.global_type_ncc_threshold,
+                   help="Seuil NCC (signal brut, sans filtre passe-bas) pour "
+                        "rattacher un type local à un type déjà connu de la base.")
     return p.parse_args()
 
 
@@ -74,6 +81,8 @@ def main():
         freq_chunk=args.freq_chunk,
         num_workers=args.num_workers,
         type_hist_bin_min=args.type_hist_bin_min,
+        type_db_dir=args.type_db_dir,
+        global_type_ncc_threshold=args.global_type_ncc_threshold,
     )
     OscilloPipeline(config).run()
 

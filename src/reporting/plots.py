@@ -361,6 +361,28 @@ def plot_shared_type_comparisons(shared_types, output_dir):
     return paths
 
 
+def plot_type_database_entry(type_id, ref_window, plots_dir):
+    """
+    Plot d'un type de la base de types persistante (voir
+    analysis.type_registry) — nom de fichier avec le même ID que le .npy
+    correspondant dans raw_signals/, pour rester appairés.
+    """
+    os.makedirs(plots_dir, exist_ok=True)
+    color = TYPE_COLORS[type_id % len(TYPE_COLORS)]
+    fig, ax = plt.subplots(figsize=(6, 3))
+    ax.plot(ref_window, color=color, linewidth=0.8)
+    ax.set_title(f"Type {type_id:04d}")
+    ax.set_xlabel("Échantillons")
+    ax.set_ylabel("Amplitude")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    fpath = os.path.join(plots_dir, f"type_{type_id:04d}.png")
+    fig.savefig(fpath, dpi=110, bbox_inches='tight')
+    plt.close(fig)
+    return fpath
+
+
 def plot_type_reference(cid, ref_window, count, output_dir):
     """
     Fenêtre de référence représentative d'un type (celle du 1er événement

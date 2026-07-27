@@ -16,6 +16,7 @@ from src.signal_processing.windowing import filter_anomaly_windows
 from src.signal_processing.filtering import lowpass_filter_batch
 from src.analysis.event_tracking import track_events_temporal_gpu, precompute_all_metrics_gpu
 from src.analysis.clustering import cluster_events_by_type, build_signal_profile
+from src.analysis.type_registry import assign_global_types
 from src.reporting.plots import plot_reference_windows, plot_all_type_summaries
 from src.reporting.html_report import export_enriched_html, export_type_summary_html
 
@@ -145,6 +146,12 @@ class OscilloPipeline:
                 anomaly_events, windows, time_arrays,
                 dom_freq_map, ncc_map, cluster_labels,
                 signal_id=signal_id
+            )
+
+            print("--- Association aux types de la base globale (sans filtre passe-bas) ---")
+            assign_global_types(
+                signal_profile, c.type_db_dir,
+                ncc_threshold=c.global_type_ncc_threshold
             )
 
             print("--- Génération des visualisations enrichies ---")
