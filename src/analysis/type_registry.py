@@ -17,6 +17,7 @@ Deux dossiers, mêmes ID en titre de fichier :
   type_db_dir/plots/type_0007.png
 """
 
+import fcntl
 import os
 import re
 from collections import defaultdict
@@ -43,29 +44,43 @@ def match_or_register_type(ref_window, type_db_dir, ncc_threshold):
     type existant le plus proche. Sinon, enregistre un nouveau type (raw
     .npy + plot, même ID dans le nom de fichier) et renvoie son nouvel ID.
     Retourne (type_id: int, is_new: bool).
+
+    Verrouillée (fcntl.flock) sur toute la section lecture-décision-écriture :
+    plusieurs runs oscillo_analysis.py peuvent tourner en parallèle (un par
+    GPU, voir run_oscillo_batch.py) et partagent cette même base — sans
+    verrou, deux process pourraient décider indépendamment qu'une forme est
+    nouvelle et s'écraser mutuellement le même ID.
     """
     raw_dir   = os.path.join(type_db_dir, "raw_signals")
     plots_dir = os.path.join(type_db_dir, "plots")
     os.makedirs(raw_dir, exist_ok=True)
 
-    ref_window   = np.asarray(ref_window, dtype=np.float64)
-    existing_ids = _existing_type_ids(raw_dir)
+    ref_window = np.asarray(ref_window, dtype=np.float64)
 
-    best_id, best_ncc = None, -1.0
-    for tid in existing_ids:
-        known = np.load(os.path.join(raw_dir, f"type_{tid:04d}.npy"))
-        n = min(len(ref_window), len(known))
-        ncc_val = max_ncc_full_range(ref_window[:n], known[:n])
-        if ncc_val > best_ncc:
-            best_id, best_ncc = tid, ncc_val
+    lock_path = os.path.join(type_db_dir, ".lock")
+    with open(lock_path, "w") as lock_fh:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX)
+        try:
+            existing_ids = _existing_type_ids(raw_dir)
 
-    if best_id is not None and best_ncc >= ncc_threshold:
-        return best_id, False
+            best_id, best_ncc = None, -1.0
+            for tid in existing_ids:
+                known = np.load(os.path.join(raw_dir, f"type_{tid:04d}.npy"))
+                n = min(len(ref_window), len(known))
+                ncc_val = max_ncc_full_range(ref_window[:n], known[:n])
+                if ncc_val > best_ncc:
+                    best_id, best_ncc = tid, ncc_val
 
-    new_id = (max(existing_ids) + 1) if existing_ids else 0
-    np.save(os.path.join(raw_dir, f"type_{new_id:04d}.npy"), ref_window.astype(np.float32))
-    plot_type_database_entry(new_id, ref_window, plots_dir)
-    return new_id, True
+            if best_id is not None and best_ncc >= ncc_threshold:
+                return best_id, False
+
+            new_id = (max(existing_ids) + 1) if existing_ids else 0
+            np.save(os.path.join(raw_dir, f"type_{new_id:04d}.npy"),
+                    ref_window.astype(np.float32))
+            plot_type_database_entry(new_id, ref_window, plots_dir)
+            return new_id, True
+        finally:
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
 
 
 def assign_global_types(signal_profile, type_db_dir, ncc_threshold):

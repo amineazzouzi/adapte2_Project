@@ -1,10 +1,14 @@
 """Application Tkinter principale — pipeline d'analyse oscillo.
 
-Lance oscillo_analysis.py (un run par signal, cf. src/analysis/oscillo_pipeline.py)
-puis oscillo_correlation.py (cf. src/analysis/correlation_pipeline.py) via
-subprocess, avec de vrais arguments CLI (plus de patch du code source à la
-volée) — un pipeline crashé ne peut pas casser la fenêtre, et la VRAM CUDA
-est proprement libérée entre deux runs.
+Lance oscillo_analysis.py — un run par signal (cf.
+src/analysis/oscillo_pipeline.py), mais tous les signaux EN PARALLÈLE via
+src/analysis/batch_pipeline.OscilloBatchRunner (un GPU par process,
+round-robin sur le nombre de GPUs détecté sur la machine) — puis
+oscillo_correlation.py (cf. src/analysis/correlation_pipeline.py) une fois
+que toutes les analyses sont terminées. Toujours de vrais arguments CLI en
+subprocess (plus de patch du code source à la volée) — un pipeline crashé
+ne peut pas casser la fenêtre, et la VRAM CUDA est proprement libérée entre
+deux runs.
 """
 
 import os
@@ -17,7 +21,9 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 from datetime import date as Date, timedelta
 
+from src.core.config import BatchConfig
 from src.core.paths import output_dir_for
+from src.analysis.batch_pipeline import OscilloBatchRunner, detect_gpu_count
 from src.ui.signal_row import SignalRow
 from src.ui.timeline_widget import TimelineWidget
 
@@ -28,7 +34,6 @@ SCRIPT_DIR      = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspat
 PROJECT_ROOT    = os.path.dirname(SCRIPT_DIR)
 VENV_PYTHON     = os.path.join(PROJECT_ROOT, '.venv', 'bin', 'python')
 PYTHON_EXE      = VENV_PYTHON if os.path.exists(VENV_PYTHON) else sys.executable
-ANALYSIS_SCRIPT = os.path.join(SCRIPT_DIR, 'oscillo_analysis.py')
 CORR_SCRIPT     = os.path.join(SCRIPT_DIR, 'oscillo_correlation.py')
 
 # ── Couleurs log ──────────────────────────────────────────────────────────────
@@ -377,29 +382,38 @@ class App(tk.Tk):
     def _pipeline(self, jobs: list[dict]):
         ok = True
         n  = len(jobs)
+        completed = 0
         try:
+            n_gpus = detect_gpu_count()
             self.after(0, self._log_section,
-                       f'DÉMARRAGE — {n} signal(s) à analyser')
+                       f'DÉMARRAGE — {n} signal(s) à analyser '
+                       f'({n_gpus} GPU(s) détecté(s), en parallèle)')
 
-            for i, job in enumerate(jobs, 1):
-                if self._stop_requested:
-                    break
+            batch_config = BatchConfig(
+                jobs=jobs,
+                log_dir=os.path.join(SCRIPT_DIR, 'results', 'batch_logs'),
+                python_executable=PYTHON_EXE,
+            )
 
-                boitier, voie, dates = job['boitier'], job['voie'], job['dates']
-                date_label = dates[0] if len(dates) == 1 else f'{dates[0]} → {dates[-1]}'
-                label = f'{boitier} / voie_{voie} / {date_label}'
+            def _on_line(label, line):
+                self.after(0, self._log_line, f'[{label}] {line}')
 
+            def _on_job_done(label, rc):
+                nonlocal ok, completed
+                completed += 1
                 self.after(0, self._set_status,
-                           f'[{i}/{n}] Analyse : {label}…')
-                self.after(0, self._set_progress, (i - 1) / n * 100)
-                self.after(0, self._log_section,
-                           f'ANALYSE ({i}/{n}) — {label}')
-
-                rc = self._run_analysis(boitier, voie, dates)
+                           f'[{completed}/{n}] terminé : {label}')
+                self.after(0, self._set_progress, completed / n * 90)
                 if rc not in (0, None):
-                    self.after(0, self._log_line,
-                               f'\n⚠️  Analyse terminée avec code {rc}\n')
                     ok = False
+                    self.after(0, self._log_line,
+                               f'\n⚠️  {label} terminé avec code {rc}\n')
+
+            OscilloBatchRunner(batch_config, SCRIPT_DIR).run(
+                on_line=_on_line,
+                on_job_done=_on_job_done,
+                stop_flag=lambda: self._stop_requested,
+            )
 
             if self._stop_requested:
                 self.after(0, self._set_status, '⬛ Arrêté.')
@@ -441,18 +455,6 @@ class App(tk.Tk):
             self.after(0, self._set_running, False)
 
     # ── Lancement des scripts ─────────────────────────────────────────────────
-
-    def _run_analysis(self, boitier: str, voie: int, dates: list[str]) -> int:
-        argv = [
-            PYTHON_EXE, ANALYSIS_SCRIPT,
-            '--boitier', boitier, '--voie', str(voie),
-            '--dates', *dates,
-        ]
-        return _run_subprocess(
-            argv, SCRIPT_DIR,
-            on_line=lambda l: self.after(0, self._log_line, l),
-            stop_flag=lambda: self._stop_requested,
-        )
 
     def _run_correlation(self, jobs: list[dict]) -> int:
         argv = [PYTHON_EXE, CORR_SCRIPT]

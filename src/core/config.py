@@ -52,6 +52,26 @@ class DataLakeConfig:
 
 
 @dataclass
+class BatchConfig:
+    """
+    Liste explicite des jobs oscillo (boitier/voie/dates) à lancer en
+    parallèle sur le serveur multi-GPU — un process par job, un GPU par
+    process (round-robin sur le nombre de GPUs détecté). Les autres
+    paramètres (seuils NCC, etc.) restent ceux par défaut de SignalConfig
+    pour chaque job ; édite cette liste à la main pour un nouveau lot.
+    """
+    data_lake_path: str = "/home/azzouzi/Bureau/Projet IA/adapte2_Project/data_lake"
+    jobs: list = field(default_factory=lambda: [
+        {"boitier": "boitier_1", "voie": 1, "dates": ["2026-03-17"]},
+        {"boitier": "boitier_1", "voie": 2, "dates": ["2026-03-17"]},
+        {"boitier": "boitier_2", "voie": 1, "dates": ["2026-03-17"]},
+    ])
+    max_parallel: int = 0  # 0 = auto-détecté (nombre de GPUs)
+    log_dir: str = "results/batch_logs"
+    python_executable: str = ""  # "" = sys.executable (voir interface.py, qui préfère .venv/bin/python)
+
+
+@dataclass
 class CorrelationConfig:
     """Défauts = constantes actuellement codées en dur dans oscillo_correlation.py."""
     project_dir: str = "/home/azzouzi/Bureau/Projet IA/adapte2_Project"
