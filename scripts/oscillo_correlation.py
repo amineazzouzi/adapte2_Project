@@ -1,19 +1,18 @@
 #!/usr/bin/env python
 # coding: utf-8
 """
-Point d'entrée CLI — pipeline de corrélation inter-signaux.
+Worker CLI interne — pipeline de corrélation inter-signaux.
 
-Lit les signal_profile.json produits par oscillo_analysis.py (un dossier par
-signal boitier+voie, cf. src/core/paths.py) et détecte les types d'anomalies
-partagés entre les signaux sélectionnés.
+PAS un point d'entrée utilisateur : invoqué en subprocess par src/ui/app.py
+une fois que tous les jobs oscillo (voir scripts/oscillo_analysis.py) sont
+terminés — interface.py est le seul point d'entrée du projet.
 
-Usage :
-  1. Lancer oscillo_analysis.py pour chaque signal à corréler (un run par
-     boitier+voie ; combine autant de jours que voulu via --dates).
-  2. python3 oscillo_correlation.py --signal boitier_1 1 --signal boitier_2 1
+Lit les signal_profile.json produits par scripts/oscillo_analysis.py (un
+dossier par signal boitier+voie, cf. src/core/paths.py) et détecte les types
+d'anomalies partagés entre les signaux sélectionnés.
 
-Zéro argument reproduit exactement le comportement historique (mêmes
-signaux/seuils par défaut).
+Invocation : `python -m scripts.oscillo_correlation --signal boitier_1 1
+--signal boitier_2 1` depuis la racine du projet (voir src/ui/app.py).
 """
 
 import argparse

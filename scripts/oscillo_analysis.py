@@ -1,19 +1,25 @@
 #!/usr/bin/env python
 # coding: utf-8
 """
-Point d'entrée CLI — pipeline d'analyse oscillo (GPU-accéléré).
+Worker CLI interne — un run du pipeline d'analyse oscillo (GPU-accéléré)
+pour un seul signal (boitier+voie+dates).
+
+PAS un point d'entrée utilisateur : invoqué en subprocess isolé par
+src/analysis/batch_pipeline.py (OscilloBatchRunner), lui-même piloté par
+interface.py — le seul point d'entrée du projet. L'isolation en process
+séparé (un par job/GPU) permet qu'un pipeline qui plante ne casse pas
+l'interface, et libère proprement la VRAM CUDA entre deux runs.
 
 Charge des fenêtres oscillo (data lake Parquet ou fichiers .txt/.csv bruts),
 détecte les anomalies par amplitude, les groupe en événements (NCC
 temporelle), les clusterise en types (NCC inter-événements), puis exporte un
 rapport HTML enrichi + signal_profile.json (consommé par
-oscillo_correlation.py).
+scripts/oscillo_correlation.py).
 
 La logique du pipeline vit dans src/ (voir OscilloPipeline). Ce script ne
-fait que résoudre la configuration (arguments CLI, ou valeurs par défaut
-identiques au comportement historique) et lancer le pipeline :
-zéro argument (`python3 oscillo_analysis.py`) reproduit exactement l'ancien
-comportement codé en dur.
+fait que résoudre la configuration (arguments CLI, ou valeurs par défaut) et
+lancer le pipeline. Invocation : `python -m scripts.oscillo_analysis ...`
+depuis la racine du projet (voir OscilloBatchRunner).
 """
 
 import argparse

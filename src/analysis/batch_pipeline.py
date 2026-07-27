@@ -1,11 +1,12 @@
 """
-Dispatch de plusieurs runs oscillo_analysis.py en parallèle sur un serveur
-multi-GPU : un process par job (boitier/voie/dates), un GPU par process en
-round-robin (CUDA_VISIBLE_DEVICES). Chaque run reste un process Python
-isolé — plus robuste que de faire jongler un seul process Python entre
-plusieurs devices CuPy, et ne touche à aucun code du pipeline lui-même.
+Dispatch de plusieurs runs de scripts/oscillo_analysis.py en parallèle sur
+un serveur multi-GPU : un process par job (boitier/voie/dates), un GPU par
+process en round-robin (CUDA_VISIBLE_DEVICES). Chaque run reste un process
+Python isolé — plus robuste que de faire jongler un seul process Python
+entre plusieurs devices CuPy, et ne touche à aucun code du pipeline lui-même.
 
-trms_analysis.py n'est pas concerné par ce dispatcher.
+Piloté par interface.py (seul point d'entrée du projet) ; trms_analysis.py
+n'est pas concerné par ce dispatcher.
 """
 
 import os
@@ -77,8 +78,6 @@ class OscilloBatchRunner:
         print(f"   Logs          : {os.path.abspath(c.log_dir)}")
         print("=" * 70 + "\n")
 
-        script = os.path.join(self.project_dir, "oscillo_analysis.py")
-
         pending = list(c.jobs)
         running = {}   # slot_id -> (Popen, label)
         results = []
@@ -92,7 +91,7 @@ class OscilloBatchRunner:
             log_fh = open(os.path.join(c.log_dir, f"{label}.log"), "w")
 
             argv = [
-                python_exe, script,
+                python_exe, "-m", "scripts.oscillo_analysis",
                 "--data-lake-path", c.data_lake_path,
                 "--boitier", job["boitier"],
                 "--voie", str(job["voie"]),

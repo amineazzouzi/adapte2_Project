@@ -1,14 +1,16 @@
 """Application Tkinter principale — pipeline d'analyse oscillo.
 
-Lance oscillo_analysis.py — un run par signal (cf.
+Point d'entrée unique du projet (lancé via interface.py à la racine).
+
+Lance scripts/oscillo_analysis.py — un run par signal (cf.
 src/analysis/oscillo_pipeline.py), mais tous les signaux EN PARALLÈLE via
 src/analysis/batch_pipeline.OscilloBatchRunner (un GPU par process,
 round-robin sur le nombre de GPUs détecté sur la machine) — puis
-oscillo_correlation.py (cf. src/analysis/correlation_pipeline.py) une fois
-que toutes les analyses sont terminées. Toujours de vrais arguments CLI en
-subprocess (plus de patch du code source à la volée) — un pipeline crashé
-ne peut pas casser la fenêtre, et la VRAM CUDA est proprement libérée entre
-deux runs.
+scripts/oscillo_correlation.py (cf. src/analysis/correlation_pipeline.py)
+une fois que toutes les analyses sont terminées. Toujours de vrais arguments
+CLI en subprocess (plus de patch du code source à la volée) — un pipeline
+crashé ne peut pas casser la fenêtre, et la VRAM CUDA est proprement libérée
+entre deux runs.
 """
 
 import os
@@ -28,13 +30,12 @@ from src.ui.signal_row import SignalRow
 from src.ui.timeline_widget import TimelineWidget
 
 # ── Chemins ──────────────────────────────────────────────────────────────────
-# SCRIPT_DIR : racine du projet (où vivent oscillo_analysis.py, outputs_*/...).
+# SCRIPT_DIR : racine du projet (où vivent scripts/, results/, outputs_*/...).
 # PROJECT_ROOT : un niveau au-dessus — c'est là qu'habite le .venv réel.
 SCRIPT_DIR      = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROJECT_ROOT    = os.path.dirname(SCRIPT_DIR)
 VENV_PYTHON     = os.path.join(PROJECT_ROOT, '.venv', 'bin', 'python')
 PYTHON_EXE      = VENV_PYTHON if os.path.exists(VENV_PYTHON) else sys.executable
-CORR_SCRIPT     = os.path.join(SCRIPT_DIR, 'oscillo_correlation.py')
 
 # ── Couleurs log ──────────────────────────────────────────────────────────────
 C_BG     = '#1e1e1e'
@@ -457,7 +458,7 @@ class App(tk.Tk):
     # ── Lancement des scripts ─────────────────────────────────────────────────
 
     def _run_correlation(self, jobs: list[dict]) -> int:
-        argv = [PYTHON_EXE, CORR_SCRIPT]
+        argv = [PYTHON_EXE, '-m', 'scripts.oscillo_correlation', '--project-dir', SCRIPT_DIR]
         for j in jobs:
             argv += ['--signal', j['boitier'], str(j['voie'])]
         return _run_subprocess(

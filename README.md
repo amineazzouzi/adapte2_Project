@@ -6,51 +6,87 @@ Détection et classification d'anomalies électriques sur des exploitations agri
 
 ## Architecture du projet
 
+Toute la logique vit dans `src/`. Il y a **un seul point d'entrée utilisateur : `interface.py`**. `to_data_lake.py` reste un script séparé car c'est une étape distincte (ingestion des données brutes), pas de l'analyse.
+
 ```
 adapte2_project/
-├── data_to_data_lake/main.py   # ETL : .txt bruts → Data Lake Parquet
-├── oscillo_analysis.py          # Pipeline 2 : groupement de fenêtres oscilloscope
-└── trms_analysis.py             # Pipeline 1 : détection pics + ruptures TRMS
+├── interface.py              # ★ SEUL POINT D'ENTRÉE — GUI Tkinter
+├── to_data_lake.py           # ETL séparé : .txt bruts → Data Lake Parquet
+│
+├── scripts/                  # Workers CLI internes — jamais lancés directement,
+│   ├── oscillo_analysis.py   #   invoqués en subprocess isolé (un par job/GPU)
+│   └── oscillo_correlation.py#   par src/analysis/batch_pipeline.py et src/ui/app.py
+│
+├── src/
+│   ├── core/                 # config.py (dataclasses de config), gpu.py (détection CuPy), paths.py
+│   ├── io/                   # datalake_reader/writer.py, raw_file_loader.py, profile_io.py
+│   ├── signal_processing/    # filtering.py, frequency.py, ncc.py (GPU), ncc_cpu.py, windowing.py
+│   ├── analysis/             # oscillo_pipeline.py, correlation_pipeline.py, batch_pipeline.py,
+│   │                         # event_tracking.py, clustering.py, type_registry.py
+│   ├── reporting/            # html_report.py, plots.py, palette.py
+│   └── ui/                   # app.py (implémentation Tkinter), signal_row.py, timeline_widget.py
+│
+└── ancienne_version/         # (gitignored) archive — trms_analysis.py (Pipeline 1) n'est PAS
+                               # encore migré vers src/ : script monolithique historique, imports
+                               # GPU en dur, chemins à adapter, à lancer séparément.
 ```
 
-**Dossiers de données** : placer les exports `.txt` / `.csv` dans `data_/` (oscillo) ou dans la structure attendue par `DATA_DIR` (TRMS). Les sorties vont dans `outputs/` — **effacé et recréé à chaque exécution**.
+**Données** : `data_lake/boitier_x/{oscillo,TRMS}/voie_x/year=Y/month=M/day=D/data.parquet`, alimenté par `to_data_lake.py`. Les sorties oscillo vont dans `results/outputs_{boitier}_v{voie}/` (un dossier par signal, remplacé à chaque nouveau run — pas un dossier par jour) ; la corrélation dans `results/outputs_correlation/`. `outputs/` reste réservé à `trms_analysis.py` (legacy), **effacé et recréé à chaque exécution**.
 
 ---
 
 ## Prérequis
 
 ```bash
-pip install pandas numpy scipy matplotlib seaborn ruptures scikit-learn pyarrow
-# GPU (optionnel pour oscillo_analysis.py, obligatoire pour trms_analysis.py) :
-pip install cupy cudf cuml  # RAPIDS — nécessite CUDA
+pip install -r requirements.txt
+# GPU (optionnel pour l'analyse oscillo/ETL, obligatoire pour trms_analysis.py legacy) :
+pip install cupy-cuda12x cudf-cu12 cuml-cu12  # RAPIDS — nécessite CUDA
 ```
+
+`src/core/gpu.py` teste un device CUDA réel (pas juste la présence du package) et expose `GPU_AVAILABLE` ; c'est la source unique de fallback GPU→CPU pour l'analyse oscillo et l'ETL.
 
 ---
 
-## ETL : `data_to_data_lake/main.py`
+## Utilisation
 
-Ingère tous les `.txt` bruts d'une arborescence vers un Data Lake Parquet partitionné.
+### 1. Ingestion des données — `to_data_lake.py`
+
+Avant toute analyse, ingérer les `.txt` bruts vers le Data Lake Parquet partitionné (logique dans `src/io/datalake_writer.py`) :
 
 ```bash
-python data_to_data_lake/main.py
+python to_data_lake.py
+python to_data_lake.py --source-root-dir /chemin/brut --data-lake-dir /chemin/data_lake
 ```
 
-- **Détection du type** : si `TRMS` / `trms` est dans le chemin → fichier TRMS, sinon oscilloscope.
+- **Détection du type** : `TRMS`/`trms` dans le chemin → fichier TRMS, sinon oscilloscope.
 - **Détection du boîtier** : regex `boitier_\d+` dans le chemin.
-- **Structure de sortie** : `data_lake/boitier_x/{oscillo,TRMS}/voie_x/year=Y/month=M/day=D/data.parquet`
-- Les fichiers Parquet existants sont fusionnés et dédupliqués sur `timestamp`.
-- Lecture chirurgicale colonne par colonne (une voie à la fois) pour économiser la RAM.
+- Fichiers Parquet existants fusionnés et dédupliqués sur `timestamp` ; lecture chirurgicale (une voie à la fois) pour économiser la RAM.
 
-Constantes à adapter : `SOURCE_ROOT_DIR`, `DATA_LAKE_DIR`.
+### 2. Analyse — `interface.py` (point d'entrée unique)
+
+```bash
+python interface.py
+```
+
+Workflow (implémentation complète dans `src/ui/app.py`) :
+
+1. Configurer N signaux (boîtier, voie, date début → date fin) dans l'interface.
+2. **Lancer** → tous les signaux sont analysés **en parallèle**, un process Python isolé par job, un GPU par process en round-robin (`src/analysis/batch_pipeline.OscilloBatchRunner`, `CUDA_VISIBLE_DEVICES`). Chaque job exécute `scripts/oscillo_analysis.py` : chargement des fenêtres depuis le data lake, détection d'anomalies par amplitude, groupement en événements (NCC temporelle), clustering en types (NCC inter-événements), rattachement à une base de types persistante inter-runs, export `rapport_enrichi.html` + `signal_profile.json`.
+3. Si ≥ 2 signaux : `scripts/oscillo_correlation.py` s'exécute ensuite sur l'ensemble — détecte les types d'anomalies partagés entre signaux (NCC entre fenêtres de référence), exporte `rapport_correlation.html`.
+4. Journal en temps réel, timeline Gantt des anomalies, boutons pour ouvrir les rapports.
+
+L'isolation en process séparé (plutôt qu'un run direct en Python dans l'interface) garantit qu'un pipeline qui plante ne casse pas la fenêtre, et que la VRAM CUDA est proprement libérée entre deux runs — voir les docstrings de `src/analysis/batch_pipeline.py` et `src/ui/app.py`.
+
+> `scripts/oscillo_analysis.py` et `scripts/oscillo_correlation.py` ne sont **pas** des points d'entrée : ce sont des workers internes invoqués via `python -m scripts.<nom>` avec `cwd` = racine du projet. Les lancer à la main pour du débogage reste possible (`python -m scripts.oscillo_analysis --boitier boitier_1 --voie 1 --dates 2026-03-17`), mais l'usage normal passe par `interface.py`.
 
 ---
 
-## Pipeline 1 : `trms_analysis.py` — Détection Pics & Ruptures
+## Pipeline 1 (legacy) : `ancienne_version/trms_analysis.py` — Détection Pics & Ruptures
 
-> ⚠️ **Requiert un GPU CUDA** — imports directs `cudf`, `cupy`, `cuml`, aucun fallback CPU.
+> ⚠️ **Non migré vers `src/`, non branché sur `interface.py`** — script monolithique historique, imports GPU en dur (`cudf`, `cupy`, `cuml`, aucun fallback CPU), chemins codés en dur à adapter avant exécution.
 
 ```bash
-python trms_analysis.py
+cd ancienne_version && python trms_analysis.py
 ```
 
 ### Fonctionnement en 3 blocs hybrides
@@ -60,15 +96,6 @@ python trms_analysis.py
 | **1 — Pics** | GPU (cuDF/CuPy) | Segmente le signal (`WINDOW_SIZE_PEAK` = 3600 pts) ; signale les fenêtres où `\|max−min\| > PEAK_MAX_MIN_DIFF_THRESHOLD` ou `efficace > PEAK_EFFICACE_THRESHOLD` |
 | **2 — Ruptures** | CPU (pandas/ruptures) | Dérivée médiane glissante → candidats → KMeans(k=2) pour filtrer les faux positifs → Binary Segmentation locale pour affiner ; traitement par blocs de 250 000 lignes (protection RAM) |
 | **3 — Oscilloscope HR** | GPU + CPU (cuDF + scipy) | Relie chaque timestamp de pic au fichier oscilloscope couvrant la plage (30 min) ; extrait ±1 s ; classe la fenêtre via 3 features |
-
-### Sorties
-
-```
-outputs/
-└── anomalie_voie_{v}/
-    ├── anomalies_pics/       # .png par pic détecté
-    └── anomalies_ruptures/   # .png global + zoom par rupture
-```
 
 ### Classification des fenêtres (Bloc 3)
 
@@ -80,7 +107,6 @@ outputs/
 
 ### Convention de nommage (Bloc 3)
 
-Le couplage TRMS↔oscilloscope repose sur le nom des fichiers :
 - Fichiers oscilloscope : `YYYY-MM-DD_HH-MM.txt` (couverture 30 min depuis l'heure)
 - PNGs de pics générés : `…timestamp_YYYY-MM-DD_HH-MM-SS.png`
 
@@ -98,39 +124,17 @@ Tout fichier ne respectant pas ces patterns est silencieusement ignoré.
 
 ---
 
-## Pipeline 2 : `oscillo_analysis.py` — Groupement par similarité
+## Configuration (Pipeline 2 & corrélation)
 
-> GPU CuPy si disponible, fallback NumPy automatique sinon.
+Tous les défauts vivent dans `src/core/config.py` (dataclasses `SignalConfig`, `DataLakeConfig`, `BatchConfig`, `CorrelationConfig`), en chemins **relatifs à la racine du projet** (tous les points d'entrée tournent avec `cwd` = racine).
 
-```bash
-python oscillo_analysis.py
-```
-
-### Fonctionnement
-
-1. **Chargement** (`load_all_oscillo_files`) : scan récursif des `.txt/.csv`, gestion des coupures temporelles > 0,5 s, padding/troncature à `TARGET_PTS` = 5000 points.
-2. **NCC batch GPU** (`compute_max_ncc_batch_gpu`) : corrélation croisée de N paires consécutives en un seul appel FFT via `_xcorr_fft_batch`. Si NCC ≥ `NCC_THRESHOLD` entre deux fenêtres consécutives → même groupe d'événements.
-3. **Fréquence dominante** (`compute_dominant_frequency_batch_gpu`) : somme de Fourier sur grille de fréquences = produit matriciel GPU ; `FREQ_CHUNK` borne la VRAM utilisée par bloc.
-4. **Export** : plots `.png` parallélisés via `ProcessPoolExecutor`, `recapitulatif_anomalies.csv`, `rapport_anomalies.html` interactif.
-
-### Sorties
-
-```
-outputs/
-├── evenement_XX_debut_YYYY-MM-DD_.../
-│   ├── window_XXXX_REFERENCE_…Hz.png
-│   └── window_XXXX_ncc_0.XXXX_…Hz.png
-├── recapitulatif_anomalies.csv
-└── rapport_anomalies.html
-```
-
-### Constantes clés
-
-| Constante | Rôle |
-|-----------|------|
-| `DATA_PATH` | Dossier d'entrée (scan récursif) |
-| `NCC_THRESHOLD` | Seuil de similarité pour regrouper (défaut 0.90) |
-| `NCC_MAX_LAG` | Décalage max pour la recherche NCC (samples) |
-| `GPU_BATCH_SIZE` | Paires NCC par batch GPU (défaut 256 — réduire si OOM) |
-| `FREQ_CHUNK` | Fréquences par bloc GPU (défaut 1000 — réduire si OOM) |
-| `NUM_WORKERS` | Workers multiprocessing pour l'export plots (défaut `min(CPU, 8)`) |
+| Constante | Dataclass | Rôle |
+|-----------|-----------|------|
+| `ncc_threshold` | `SignalConfig` | Seuil NCC pour regrouper deux fenêtres consécutives en événement |
+| `ncc_max_lag` | `SignalConfig` | Décalage max pour la recherche NCC (samples) |
+| `ncc_type_threshold` | `SignalConfig` | Seuil NCC pour le clustering inter-événements en types |
+| `lowpass_cutoff_hz` | `SignalConfig` | Coupure (Hz) du filtre passe-bas appliqué avant tout calcul NCC |
+| `global_type_ncc_threshold` | `SignalConfig` | Seuil NCC (signal brut) pour rattacher un type local à la base persistante |
+| `gpu_batch_size` / `freq_chunk` | `SignalConfig` | Taille des batches GPU — réduire si OOM |
+| `max_parallel` | `BatchConfig` | Jobs simultanés (0 = auto, un par GPU détecté) |
+| `corr_window_s` | `CorrelationConfig` | Fenêtre de co-occurrence temporelle (±s) |

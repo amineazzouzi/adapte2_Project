@@ -46,10 +46,11 @@ def match_or_register_type(ref_window, type_db_dir, ncc_threshold):
     Retourne (type_id: int, is_new: bool).
 
     Verrouillée (fcntl.flock) sur toute la section lecture-décision-écriture :
-    plusieurs runs oscillo_analysis.py peuvent tourner en parallèle (un par
-    GPU, voir run_oscillo_batch.py) et partagent cette même base — sans
-    verrou, deux process pourraient décider indépendamment qu'une forme est
-    nouvelle et s'écraser mutuellement le même ID.
+    plusieurs runs de scripts/oscillo_analysis.py peuvent tourner en
+    parallèle (un par GPU, voir src/analysis/batch_pipeline.py) et
+    partagent cette même base — sans verrou, deux process pourraient
+    décider indépendamment qu'une forme est nouvelle et s'écraser
+    mutuellement le même ID.
     """
     raw_dir   = os.path.join(type_db_dir, "raw_signals")
     plots_dir = os.path.join(type_db_dir, "plots")

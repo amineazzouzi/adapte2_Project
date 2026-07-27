@@ -8,14 +8,17 @@ from dataclasses import dataclass, field
 @dataclass
 class SignalConfig:
     # ── Source ────────────────────────────────────────────────────────
+    # Chemins relatifs à la racine du projet : tous les points d'entrée
+    # (interface.py, to_data_lake.py, scripts/*.py) tournent avec cwd =
+    # racine du projet, donc pas besoin de chemin absolu machine-spécifique.
     use_datalake: bool = True
-    data_lake_path: str = "/home/azzouzi/Bureau/Projet IA/adapte2_Project/data_lake"
+    data_lake_path: str = "data_lake"
     boitier: str = "boitier_1"
     voie: int = 1
     dates: list = field(default_factory=lambda: ["2026-03-17"])
 
     # Mode fichiers bruts (si use_datalake=False)
-    data_path: str = "/home/azzouzi/Bureau/Projet IA/adapte2_Project/data_lake"
+    data_path: str = "data_lake"
     output_dir_raw: str = "outputs"
     channel_index: int = 0
 
@@ -43,9 +46,11 @@ class SignalConfig:
 
 @dataclass
 class DataLakeConfig:
-    """Défauts = constantes actuellement codées en dur dans to_data_lake.py."""
-    source_root_dir: str = "/home/azzouzi/Bureau/Projet IA/adapte2_Project/Exploitation_Brehaudiere"
-    data_lake_dir: str = "/home/azzouzi/Bureau/Projet IA/adapte2_Project/data_lake"
+    """source_root_dir pointe vers l'arborescence de données brutes (.txt) —
+    spécifique à chaque environnement/serveur, à passer via --source-root-dir
+    si elle ne vit pas à la racine du projet sous ce nom."""
+    source_root_dir: str = "Exploitation_Brehaudiere"
+    data_lake_dir: str = "data_lake"
     chunk_size_base: int = 200_000
     gpu_sort_threshold: int = 300_000
     n_workers: int = 5
@@ -60,7 +65,7 @@ class BatchConfig:
     paramètres (seuils NCC, etc.) restent ceux par défaut de SignalConfig
     pour chaque job ; édite cette liste à la main pour un nouveau lot.
     """
-    data_lake_path: str = "/home/azzouzi/Bureau/Projet IA/adapte2_Project/data_lake"
+    data_lake_path: str = "data_lake"
     jobs: list = field(default_factory=lambda: [
         {"boitier": "boitier_1", "voie": 1, "dates": ["2026-03-17"]},
         {"boitier": "boitier_1", "voie": 2, "dates": ["2026-03-17"]},
@@ -73,8 +78,10 @@ class BatchConfig:
 
 @dataclass
 class CorrelationConfig:
-    """Défauts = constantes actuellement codées en dur dans oscillo_correlation.py."""
-    project_dir: str = "/home/azzouzi/Bureau/Projet IA/adapte2_Project"
+    """project_dir par défaut = répertoire courant : tous les points d'entrée
+    tournent avec cwd = racine du projet (interface.py le fixe explicitement
+    via --project-dir pour scripts/oscillo_correlation.py)."""
+    project_dir: str = "."
     signals: list = field(default_factory=lambda: [
         {"boitier": "boitier_1", "voie": 1},
         {"boitier": "boitier_2", "voie": 1},
