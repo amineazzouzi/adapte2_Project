@@ -25,6 +25,9 @@ class SignalConfig:
     ncc_type_threshold: float = 0.3
     n_freq_bins: int = 100000
 
+    # ── Filtrage passe-bas (avant calcul de similarité NCC) ──────────────
+    lowpass_cutoff_hz: float = 3000.0
+
     # ── Perf ──────────────────────────────────────────────────────────
     gpu_batch_size: int = 2048
     freq_chunk: int = 100000

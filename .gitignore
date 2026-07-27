@@ -2,7 +2,8 @@
 /data_lake
 /Exploitation_Brehaudiere
 /outputs_*
-/outputs_correlation
 __pycache__/
 *.pyc
 /results
+/.claude
+/data_to_data_lake

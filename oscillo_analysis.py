@@ -38,6 +38,9 @@ def parse_args():
     p.add_argument("--data-path", default=d.data_path)
     p.add_argument("--output-dir-raw", default=d.output_dir_raw)
     p.add_argument("--channel-index", type=int, default=d.channel_index)
+    p.add_argument("--lowpass-cutoff-hz", type=float, default=d.lowpass_cutoff_hz,
+                   help="Fréquence de coupure (Hz) du filtre passe-bas appliqué "
+                        "avant le calcul de similarité NCC.")
     p.add_argument("--ncc-threshold", type=float, default=d.ncc_threshold)
     p.add_argument("--ncc-max-lag", type=int, default=d.ncc_max_lag)
     p.add_argument("--ncc-type-threshold", type=float, default=d.ncc_type_threshold)
@@ -59,6 +62,7 @@ def main():
         data_path=args.data_path,
         output_dir_raw=args.output_dir_raw,
         channel_index=args.channel_index,
+        lowpass_cutoff_hz=args.lowpass_cutoff_hz,
         ncc_threshold=args.ncc_threshold,
         ncc_max_lag=args.ncc_max_lag,
         ncc_type_threshold=args.ncc_type_threshold,

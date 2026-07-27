@@ -13,6 +13,7 @@ from src.io.datalake_reader import load_from_datalake
 from src.io.raw_file_loader import load_all_oscillo_files
 from src.io.profile_io import save_type_windows, serialize_signal_profile
 from src.signal_processing.windowing import filter_anomaly_windows
+from src.signal_processing.filtering import lowpass_filter_batch
 from src.analysis.event_tracking import track_events_temporal_gpu, precompute_all_metrics_gpu
 from src.analysis.clustering import cluster_events_by_type, build_signal_profile
 from src.reporting.plots import plot_reference_windows
@@ -89,11 +90,22 @@ class OscilloPipeline:
         else:
             is_anomaly = np.array([], dtype=int)
 
+        # ── Filtrage passe-bas (avant tout calcul de similarité NCC) ─────
+        # Retire le bruit haute fréquence (> lowpass_cutoff_hz) qui pollue la
+        # corrélation croisée. Le signal brut reste utilisé pour la détection
+        # d'anomalie par amplitude, la fréquence dominante et l'affichage.
+        if len(windows) > 0:
+            t0 = time.time()
+            windows_ncc = lowpass_filter_batch(windows, time_arrays, cutoff_hz=c.lowpass_cutoff_hz)
+            print(f"⏱️  Filtrage passe-bas ({c.lowpass_cutoff_hz:.0f} Hz) : {time.time()-t0:.2f}s")
+        else:
+            windows_ncc = windows
+
         # ── Groupement temporel par NCC (GPU) ───────────────────────────
         t0 = time.time()
         if len(is_anomaly) > 0:
             anomaly_events = track_events_temporal_gpu(
-                windows, is_anomaly, timestamps,
+                windows_ncc, is_anomaly, timestamps,
                 threshold=c.ncc_threshold, max_lag=c.ncc_max_lag
             )
             print(f"\nTotal groupes (événements) : {len(anomaly_events)}")
@@ -107,7 +119,7 @@ class OscilloPipeline:
         t0 = time.time()
         if len(anomaly_events) > 0:
             dom_freq_map, ncc_map, _is_ref_map = precompute_all_metrics_gpu(
-                anomaly_events, windows, time_arrays,
+                anomaly_events, windows, windows_ncc, time_arrays,
                 n_freq_bins=c.n_freq_bins, freq_chunk=c.freq_chunk,
                 ncc_max_lag=c.ncc_max_lag,
             )
@@ -121,7 +133,7 @@ class OscilloPipeline:
             t0 = time.time()
             print("\n--- Clustering inter-événements (super-types) ---")
             cluster_labels, _ncc_matrix = cluster_events_by_type(
-                anomaly_events, windows,
+                anomaly_events, windows_ncc,
                 gpu_batch_size=c.gpu_batch_size, ncc_max_lag=c.ncc_max_lag,
                 ncc_type_threshold=c.ncc_type_threshold,
             )

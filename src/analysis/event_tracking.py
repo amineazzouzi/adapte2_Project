@@ -100,12 +100,15 @@ def track_events_temporal_gpu(windows, is_anomaly, timestamps, threshold, max_la
     return events
 
 
-def precompute_all_metrics_gpu(anomaly_events, windows, time_arrays,
+def precompute_all_metrics_gpu(anomaly_events, windows, windows_for_ncc, time_arrays,
                                 n_freq_bins, freq_chunk, ncc_max_lag):
     """
     Calcule en batch GPU :
       - la fréquence dominante de CHAQUE fenêtre impliquée dans un événement
+        (sur le signal brut, `windows`)
       - la NCC de chaque fenêtre vs la première fenêtre de son événement
+        (sur le signal filtré passe-bas, `windows_for_ncc` — voir
+        signal_processing.filtering.lowpass_filter_batch)
     Retourne deux dicts {win_idx: valeur}.
     """
     all_indices = []
@@ -139,8 +142,8 @@ def precompute_all_metrics_gpu(anomaly_events, windows, time_arrays,
 
     ncc_values = np.zeros(len(all_indices), dtype=np.float64)
     if non_ref_mask.any():
-        x_batch = windows[ref_indices[non_ref_mask]]
-        y_batch = windows[all_indices[non_ref_mask]]
+        x_batch = windows_for_ncc[ref_indices[non_ref_mask]]
+        y_batch = windows_for_ncc[all_indices[non_ref_mask]]
         ncc_values[non_ref_mask] = compute_max_ncc_batch_gpu(x_batch, y_batch, max_lag=ncc_max_lag)
 
     elapsed = time.time() - t0
