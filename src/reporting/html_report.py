@@ -68,6 +68,8 @@ def export_enriched_html(signal_profile, base_output_dir, ref_plot_paths=None):
                 if ev_id not in ref_plot_paths:
                     continue
                 ts = ev['ref_timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+                freqs4 = ev.get('ref_dom_freqs4', [ev['ref_dom_freq'], 0.0, 0.0, 0.0])
+                freqs4_str = ', '.join(f"{f:.1f}" for f in freqs4 if f > 0) or f"{ev['ref_dom_freq']:.1f}"
                 html.append(
                     f"<div style='border:1px solid #ddd;border-radius:6px;"
                     f"padding:12px;background:#fafafa'>"
@@ -75,7 +77,7 @@ def export_enriched_html(signal_profile, base_output_dir, ref_plot_paths=None):
                     f"<strong>Événement {ev_id}</strong> &bull; {ts} &bull; "
                     f"{ev['window_count']} fen&ecirc;tres &bull; "
                     f"Dur&eacute;e&nbsp;: {ev['duration_s']:.1f}&nbsp;s &bull; "
-                    f"Fr&eacute;q.&nbsp;r&eacute;f.&nbsp;: {ev['ref_dom_freq']:.1f}&nbsp;Hz</p>"
+                    f"Fr&eacute;q.&nbsp;dominantes&nbsp;: {freqs4_str}&nbsp;Hz</p>"
                     f"<img src='{ref_plot_paths[ev_id]}' "
                     f"alt='R&eacute;f&eacute;rence &eacute;v&eacute;nement {ev_id}'/>"
                     f"</div>"

@@ -412,6 +412,14 @@ def plot_type_occurrence_histogram(cid, timestamps, t_min, t_max, output_dir, bi
     """
     Histogramme d'apparition d'un type sur toute la durée d'analyse
     (bins de bin_width_min minutes, grille commune t_min -> t_max).
+
+    Un repère ('trait') est aussi tracé sous l'axe des x pour chaque
+    occurrence individuelle. Sans ça, un type avec très peu d'occurrences
+    (ex: 1 seule anomalie) produit une barre large de bin_width_min minutes
+    mais large de quelques pixels seulement une fois rapportée à une plage
+    d'analyse de plusieurs jours — visuellement invisible. Le repère est
+    tracé en coordonnées d'axe (largeur en points, pas en unités de temps)
+    donc reste visible quelle que soit l'échelle.
     """
     type_dir = os.path.join(output_dir, "type_refs")
     os.makedirs(type_dir, exist_ok=True)
@@ -420,12 +428,16 @@ def plot_type_occurrence_histogram(cid, timestamps, t_min, t_max, output_dir, bi
     freq  = f'{bin_width_min}min'
     bins  = pd.date_range(t_min.floor(freq), t_max.ceil(freq), freq=freq)
 
-    counts = pd.DatetimeIndex(timestamps).floor(freq).value_counts().sort_index()
+    ts_index = pd.DatetimeIndex(timestamps)
+    counts = ts_index.floor(freq).value_counts().sort_index()
     counts = counts.reindex(bins[:-1], fill_value=0)
 
     fig, ax = plt.subplots(figsize=(8, 3))
     ax.bar(counts.index, counts.values, width=pd.Timedelta(minutes=bin_width_min),
            color=color, alpha=0.85, align='edge')
+    ax.plot(ts_index, [-0.04] * len(ts_index), marker='|', linestyle='none',
+            markersize=10, markeredgewidth=1.5, color=color,
+            transform=ax.get_xaxis_transform(), clip_on=False)
     ax.xaxis_date()
     fmt = '%H:%M' if (t_max - t_min).total_seconds() < 86400 else '%d/%m %H:%M'
     ax.xaxis.set_major_formatter(mdates.DateFormatter(fmt))
