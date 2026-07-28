@@ -22,16 +22,17 @@ from src.reporting.palette import TYPE_COLORS, shared_pair_color
 
 def _plot_ref_window_worker(args):
     """Worker : génère et sauvegarde le plot de référence d'un événement."""
-    ev_id, cid, signal, time_ax, dom_freq, refs_dir, output_dir = args
+    ev_id, cid, signal, time_ax, dom_freqs4, refs_dir, output_dir = args
 
     t_rel  = time_seconds_from_axis(time_ax)
     ts_str = pd.to_datetime(time_ax[0]).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    freqs_str = ", ".join(f"{f:.1f}" for f in dom_freqs4 if f > 0) or "0.0"
 
     fig, ax = plt.subplots(figsize=(12, 4))
     ax.plot(t_rel, signal, color='firebrick', alpha=0.85, linewidth=0.8)
     ax.set_title(
         f"Événement {ev_id:02d} — Type {cid} — Fenêtre de référence\n"
-        f"{ts_str}  |  Fréq. dominante : {dom_freq:.1f} Hz"
+        f"{ts_str}  |  Fréq. dominantes : {freqs_str} Hz"
     )
     ax.set_xlabel("Temps relatif (s)")
     ax.set_ylabel("Amplitude")
@@ -59,7 +60,8 @@ def plot_reference_windows(signal_profile, time_arrays, output_dir, num_workers=
 
     tasks = [
         (ev['event_id'], ev['cluster_id'], ev['ref_window'],
-         time_arrays[ev['ref_win_idx']], ev['ref_dom_freq'],
+         time_arrays[ev['ref_win_idx']],
+         ev.get('ref_dom_freqs4', [ev['ref_dom_freq'], 0.0, 0.0, 0.0]),
          refs_dir, output_dir)
         for ev in events
     ]

@@ -47,6 +47,7 @@ def serialize_signal_profile(signal_profile, output_dir):
                 'cluster_id':        ev['cluster_id'],
                 'ref_timestamp':     ts(ev['ref_timestamp']),
                 'ref_dom_freq':      ev['ref_dom_freq'],
+                'ref_dom_freqs4':    ev.get('ref_dom_freqs4', [ev['ref_dom_freq'], 0.0, 0.0, 0.0]),
                 'window_count':      ev['window_count'],
                 'duration_s':        ev['duration_s'],
                 'window_timestamps': [ts(t) for t in ev['window_timestamps']],

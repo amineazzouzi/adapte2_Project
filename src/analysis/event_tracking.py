@@ -12,7 +12,9 @@ from src.core.gpu import GPU_AVAILABLE, cp
 from src.signal_processing.ncc import (
     compute_max_ncc_single, compute_max_ncc_batch_gpu, ncc_pair_gpu_fast,
 )
-from src.signal_processing.frequency import compute_dominant_frequency_batch_gpu
+from src.signal_processing.frequency import (
+    compute_dominant_frequency_batch_gpu, compute_top_n_dominant_frequencies_batch,
+)
 
 
 def track_events_temporal_gpu(windows, is_anomaly, timestamps, threshold, max_lag):
@@ -106,10 +108,13 @@ def precompute_all_metrics_gpu(anomaly_events, windows, windows_for_ncc, time_ar
     Calcule en batch GPU :
       - la fréquence dominante de CHAQUE fenêtre impliquée dans un événement
         (sur le signal brut, `windows`)
+      - les 4 fréquences dominantes (pics spectraux) de la fenêtre de
+        RÉFÉRENCE de chaque événement uniquement (sur le signal brut) —
+        pour l'affichage informatif des plots de référence
       - la NCC de chaque fenêtre vs la première fenêtre de son événement
         (sur le signal filtré passe-bas, `windows_for_ncc` — voir
         signal_processing.filtering.lowpass_filter_batch)
-    Retourne deux dicts {win_idx: valeur}.
+    Retourne quatre dicts {win_idx: valeur}.
     """
     all_indices = []
     ref_indices = []  # pour chaque win_idx, l'indice de la fenêtre de référence
@@ -136,6 +141,13 @@ def precompute_all_metrics_gpu(anomaly_events, windows, windows_for_ncc, time_ar
         sigs, times, n_freq=n_freq_bins, freq_chunk=freq_chunk
     )
 
+    # ── Top 4 fréquences dominantes des fenêtres de référence uniquement ────
+    unique_ref_indices = np.unique(ref_indices)
+    top4_freqs = compute_top_n_dominant_frequencies_batch(
+        windows[unique_ref_indices], time_arrays[unique_ref_indices], top_n=4
+    )
+    dom_freqs4_map = dict(zip(unique_ref_indices.tolist(), top4_freqs.tolist()))
+
     # ── NCC vs référence en batch (sauf les fenêtres qui SONT la référence) ──
     is_ref = (all_indices == ref_indices)
     non_ref_mask = ~is_ref
@@ -154,4 +166,4 @@ def precompute_all_metrics_gpu(anomaly_events, windows, windows_for_ncc, time_ar
     ncc_map = dict(zip(all_indices.tolist(), ncc_values.tolist()))
     is_ref_map = dict(zip(all_indices.tolist(), is_ref.tolist()))
 
-    return dom_freq_map, ncc_map, is_ref_map
+    return dom_freq_map, ncc_map, is_ref_map, dom_freqs4_map

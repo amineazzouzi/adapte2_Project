@@ -116,10 +116,10 @@ class OscilloPipeline:
         print(f"⏱️  Groupement NCC : {time.time()-t0:.2f}s")
 
         # ── Pré-calcul GPU des métriques ────────────────────────────────
-        dom_freq_map, ncc_map = {}, {}
+        dom_freq_map, ncc_map, dom_freqs4_map = {}, {}, {}
         t0 = time.time()
         if len(anomaly_events) > 0:
-            dom_freq_map, ncc_map, _is_ref_map = precompute_all_metrics_gpu(
+            dom_freq_map, ncc_map, _is_ref_map, dom_freqs4_map = precompute_all_metrics_gpu(
                 anomaly_events, windows, windows_ncc, time_arrays,
                 n_freq_bins=c.n_freq_bins, freq_chunk=c.freq_chunk,
                 ncc_max_lag=c.ncc_max_lag,
@@ -145,6 +145,7 @@ class OscilloPipeline:
             signal_profile = build_signal_profile(
                 anomaly_events, windows, time_arrays,
                 dom_freq_map, ncc_map, cluster_labels,
+                dom_freqs4_map=dom_freqs4_map,
                 signal_id=signal_id
             )
 
