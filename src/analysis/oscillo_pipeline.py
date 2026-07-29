@@ -83,12 +83,14 @@ class OscilloPipeline:
         # ── Filtrage des anomalies par amplitude locale ─────────────────
         if len(windows) > 0:
             t0 = time.time()
-            is_anomaly = filter_anomaly_windows(windows, n_segments=10, threshold=0.0)
-            is_anomaly &= filter_by_peak_threshold(windows, threshold=30)
+            is_anomaly = filter_anomaly_windows(
+                windows, n_segments=c.anomaly_n_segments, threshold=c.anomaly_threshold
+            )
+            is_anomaly &= filter_by_peak_threshold(windows, threshold=c.peak_threshold)
             n_anom = int(np.sum(is_anomaly))
             print(f"Fenêtres anomalies détectées : {n_anom} / {len(is_anomaly)} "
-                  f"(seuil amplitude moy. > 0.0 sur 10 segments, "
-                  f"et pic max >= 30 et pic min <= -30)")
+                  f"(seuil amplitude moy. > {c.anomaly_threshold} sur {c.anomaly_n_segments} segments, "
+                  f"et pic max >= {c.peak_threshold} et pic min <= -{c.peak_threshold})")
             print(f"⏱️  Filtrage : {time.time()-t0:.2f}s")
         else:
             is_anomaly = np.array([], dtype=int)

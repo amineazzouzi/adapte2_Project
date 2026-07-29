@@ -22,6 +22,14 @@ class SignalConfig:
     output_dir_raw: str = "outputs"
     channel_index: int = 0
 
+    # ── Filtrage anomalies par fenêtre (src/signal_processing/windowing.py) ──
+    # 1. filter_anomaly_windows : amplitude locale moyenne (n_segments segments)
+    anomaly_n_segments: int = 10
+    anomaly_threshold: float = 0.0
+    # 2. filter_by_peak_threshold : pic positif ET pic négatif (abs) au-dessus
+    #    du seuil, combiné en ET avec le filtre ci-dessus
+    peak_threshold: float = 30.0
+
     # ── Seuils NCC / détection ───────────────────────────────────────
     ncc_threshold: float = 0.30
     ncc_max_lag: int = 5000
@@ -71,7 +79,8 @@ class BatchConfig:
         {"boitier": "boitier_1", "voie": 2, "dates": ["2026-03-17"]},
         {"boitier": "boitier_2", "voie": 1, "dates": ["2026-03-17"]},
     ])
-    max_parallel: int = 0  # 0 = auto-détecté (nombre de GPUs)
+    max_parallel: int = 1  # 1 = un seul job à la fois (GPU unique, comme avant la
+                            # parallélisation) ; 0 = auto-détecté (nombre de GPUs)
     log_dir: str = "results/batch_logs"
     python_executable: str = ""  # "" = sys.executable (voir interface.py, qui préfère .venv/bin/python)
 

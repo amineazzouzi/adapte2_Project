@@ -386,15 +386,16 @@ class App(tk.Tk):
         completed = 0
         try:
             n_gpus = detect_gpu_count()
-            self.after(0, self._log_section,
-                       f'DÉMARRAGE — {n} signal(s) à analyser '
-                       f'({n_gpus} GPU(s) détecté(s), en parallèle)')
-
             batch_config = BatchConfig(
                 jobs=jobs,
                 log_dir=os.path.join(SCRIPT_DIR, 'results', 'batch_logs'),
                 python_executable=PYTHON_EXE,
             )
+            max_parallel = batch_config.max_parallel or n_gpus
+            mode = 'en parallèle' if max_parallel > 1 else 'en série (1 GPU)'
+            self.after(0, self._log_section,
+                       f'DÉMARRAGE — {n} signal(s) à analyser '
+                       f'({n_gpus} GPU(s) détecté(s), {mode})')
 
             def _on_line(label, line):
                 self.after(0, self._log_line, f'[{label}] {line}')

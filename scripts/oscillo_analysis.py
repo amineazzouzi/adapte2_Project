@@ -44,6 +44,15 @@ def parse_args():
     p.add_argument("--data-path", default=d.data_path)
     p.add_argument("--output-dir-raw", default=d.output_dir_raw)
     p.add_argument("--channel-index", type=int, default=d.channel_index)
+    p.add_argument("--anomaly-n-segments", type=int, default=d.anomaly_n_segments,
+                   help="Nombre de segments pour le filtrage d'anomalie par "
+                        "amplitude locale (filter_anomaly_windows).")
+    p.add_argument("--anomaly-threshold", type=float, default=d.anomaly_threshold,
+                   help="Seuil d'amplitude moyenne (max-min par segment) au-delà "
+                        "duquel une fenêtre est une anomalie.")
+    p.add_argument("--peak-threshold", type=float, default=d.peak_threshold,
+                   help="Seuil sur les pics de la fenêtre entière : anomalie "
+                        "seulement si max >= seuil ET |min| >= seuil.")
     p.add_argument("--lowpass-cutoff-hz", type=float, default=d.lowpass_cutoff_hz,
                    help="Fréquence de coupure (Hz) du filtre passe-bas appliqué "
                         "avant le calcul de similarité NCC.")
@@ -78,6 +87,9 @@ def main():
         data_path=args.data_path,
         output_dir_raw=args.output_dir_raw,
         channel_index=args.channel_index,
+        anomaly_n_segments=args.anomaly_n_segments,
+        anomaly_threshold=args.anomaly_threshold,
+        peak_threshold=args.peak_threshold,
         lowpass_cutoff_hz=args.lowpass_cutoff_hz,
         ncc_threshold=args.ncc_threshold,
         ncc_max_lag=args.ncc_max_lag,
