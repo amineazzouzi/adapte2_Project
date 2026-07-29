@@ -2,10 +2,22 @@
 Découpage et validation de fenêtres. Le découpage en fenêtres est PUREMENT
 temporel (coupure sur écart > 0.5s) — aucune troncation à une taille fixe :
 chaque fenêtre garde sa longueur naturelle. stack_variable_windows ne fait
-que réconcilier des longueurs différentes en complétant (jamais en coupant).
+que réconcilier des longueurs différentes en complétant (jamais en coupant),
+après avoir retiré la composante continue de chaque fenêtre (voir
+remove_dc_offset).
 """
 
 import numpy as np
+
+
+def remove_dc_offset(all_windows):
+    """
+    Retire la composante continue (moyenne) de chaque fenêtre individuellement,
+    pour qu'elles soient centrées sur zéro. Calculée sur le contenu réel de
+    chaque fenêtre, AVANT le padding de stack_variable_windows (sinon la
+    moyenne serait faussée par les zéros de complétion).
+    """
+    return [w - w.mean() for w in all_windows]
 
 
 def stack_variable_windows(all_windows, all_time_arrays):
@@ -17,6 +29,8 @@ def stack_variable_windows(all_windows, all_time_arrays):
     """
     if not all_windows:
         return np.array(all_windows), np.array(all_time_arrays, dtype=object)
+
+    all_windows = remove_dc_offset(all_windows)
 
     lengths = {len(w) for w in all_windows}
     if len(lengths) > 1:
@@ -37,7 +51,7 @@ def stack_variable_windows(all_windows, all_time_arrays):
     return np.array(all_windows), np.array(all_time_arrays, dtype=object)
 
 
-def filter_anomaly_windows(windows, n_segments=10, threshold=40):
+def filter_anomaly_windows(windows, n_segments=10, threshold=20):
     """
     Classe chaque fenêtre comme anomalie ou non selon son amplitude locale.
 
@@ -60,3 +74,22 @@ def filter_anomaly_windows(windows, n_segments=10, threshold=40):
     seg_ranges = trimmed.max(axis=2) - trimmed.min(axis=2)   # (N, n_segments)
     mean_range = seg_ranges.mean(axis=1)                      # (N,)
     return (mean_range > threshold).astype(int)
+
+
+def filter_by_peak_threshold(windows, threshold=30):
+    """
+    Contrainte supplémentaire sur les pics de la fenêtre entière (et non plus
+    l'amplitude locale par segment, voir filter_anomaly_windows) : anomalie
+    seulement si le pic positif (max) ET le pic négatif (min, en valeur
+    absolue) dépassent tous deux threshold. Filtre les fenêtres où un seul
+    des deux côtés montre une variation significative — pertinent maintenant
+    que les fenêtres sont centrées sur zéro (voir remove_dc_offset), où un
+    vrai signal perturbé est attendu symétrique.
+
+    Vectorisé sur tout le batch en une seule opération NumPy.
+
+    Retourne : array int (N,) avec 0 ou 1.
+    """
+    max_val = windows.max(axis=1)
+    min_val = windows.min(axis=1)
+    return ((max_val >= threshold) & (np.abs(min_val) >= threshold)).astype(int)

@@ -12,7 +12,7 @@ from src.core.paths import output_dir_for, signal_id_for
 from src.io.datalake_reader import load_from_datalake
 from src.io.raw_file_loader import load_all_oscillo_files
 from src.io.profile_io import save_type_windows, serialize_signal_profile
-from src.signal_processing.windowing import filter_anomaly_windows
+from src.signal_processing.windowing import filter_anomaly_windows, filter_by_peak_threshold
 from src.signal_processing.filtering import lowpass_filter_batch
 from src.analysis.event_tracking import track_events_temporal_gpu, precompute_all_metrics_gpu
 from src.analysis.clustering import cluster_events_by_type, build_signal_profile
@@ -83,10 +83,12 @@ class OscilloPipeline:
         # ── Filtrage des anomalies par amplitude locale ─────────────────
         if len(windows) > 0:
             t0 = time.time()
-            is_anomaly = filter_anomaly_windows(windows, n_segments=10, threshold=50)
+            is_anomaly = filter_anomaly_windows(windows, n_segments=10, threshold=0.0)
+            is_anomaly &= filter_by_peak_threshold(windows, threshold=30)
             n_anom = int(np.sum(is_anomaly))
             print(f"Fenêtres anomalies détectées : {n_anom} / {len(is_anomaly)} "
-                  f"(seuil amplitude moy. > 50 sur 10 segments)")
+                  f"(seuil amplitude moy. > 0.0 sur 10 segments, "
+                  f"et pic max >= 30 et pic min <= -30)")
             print(f"⏱️  Filtrage : {time.time()-t0:.2f}s")
         else:
             is_anomaly = np.array([], dtype=int)
