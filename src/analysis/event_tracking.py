@@ -111,7 +111,8 @@ def precompute_all_metrics_gpu(anomaly_events, windows, windows_for_ncc, time_ar
       - les 4 fréquences dominantes (pics spectraux) de la fenêtre de
         RÉFÉRENCE de chaque événement uniquement (sur le signal brut) —
         pour l'affichage informatif des plots de référence
-      - la NCC de chaque fenêtre vs la première fenêtre de son événement
+      - la NCC de chaque fenêtre vs la fenêtre de référence de son événement
+        (event["ref_idx"], celle du plus grand max — voir oscillo_pipeline.py)
         (sur le signal filtré passe-bas, `windows_for_ncc` — voir
         signal_processing.filtering.lowpass_filter_batch)
     Retourne quatre dicts {win_idx: valeur}.
@@ -121,7 +122,7 @@ def precompute_all_metrics_gpu(anomaly_events, windows, windows_for_ncc, time_ar
 
     for event in anomaly_events:
         indices = event["indices"]
-        ref_idx = indices[0]
+        ref_idx = event["ref_idx"]
         for win_idx in indices:
             all_indices.append(win_idx)
             ref_indices.append(ref_idx)

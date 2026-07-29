@@ -113,6 +113,11 @@ class OscilloPipeline:
                 windows_ncc, is_anomaly, timestamps,
                 threshold=c.ncc_threshold, max_lag=c.ncc_max_lag
             )
+            # Fenêtre de référence de chaque événement = celle qui a le plus
+            # grand max (signal brut) parmi toutes les fenêtres de l'événement
+            # — pas forcément la première chronologiquement.
+            for event in anomaly_events:
+                event["ref_idx"] = max(event["indices"], key=lambda i: windows[i].max())
             print(f"\nTotal groupes (événements) : {len(anomaly_events)}")
         else:
             anomaly_events = []

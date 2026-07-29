@@ -24,7 +24,7 @@ def cluster_events_by_type(anomaly_events, windows,
     if N == 1:
         return [0], np.ones((1, 1))
 
-    ref_indices = np.array([ev['indices'][0] for ev in anomaly_events])
+    ref_indices = np.array([ev['ref_idx'] for ev in anomaly_events])
     ref_windows = windows[ref_indices]
 
     # Toutes les paires i<j en un batch chunké
@@ -73,7 +73,7 @@ def build_signal_profile(anomaly_events, windows, time_arrays,
     events_out = []
     for ev_idx, event in enumerate(anomaly_events):
         indices   = event['indices']
-        ref_idx   = indices[0]
+        ref_idx   = event['ref_idx']
         win_ts    = [pd.to_datetime(time_arrays[i][0]) for i in indices]
         debut_ts  = pd.to_datetime(event['debut'])
         fin_ts    = pd.to_datetime(event['fin'])
