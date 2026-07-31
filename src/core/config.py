@@ -15,7 +15,7 @@ class SignalConfig:
     data_lake_path: str = "data_lake"
     boitier: str = "boitier_1"
     voie: int = 1
-    dates: list = field(default_factory=lambda: ["2026-03-17"])
+    dates: list = field(default_factory=lambda: ["2026-02-18"])
 
     # Mode fichiers bruts (si use_datalake=False)
     data_path: str = "data_lake"
@@ -25,36 +25,39 @@ class SignalConfig:
     # ── Filtrage anomalies par fenêtre (src/signal_processing/windowing.py) ──
     # 1. filter_anomaly_windows : amplitude locale moyenne (n_segments segments)
     anomaly_n_segments: int = 10
-    anomaly_threshold: float = 0.0
+    anomaly_threshold: float = 50
     # 2. filter_by_peak_threshold : pic positif ET pic négatif (abs) au-dessus
     #    du seuil, combiné en ET avec le filtre ci-dessus
-    peak_threshold: float = 25
+    peak_threshold: float = 30
 
     # ── Classification par nombre de pics isolés (windowing.py::classify_windows_by_peak_count) ──
     # Méthode indépendante du filtrage ci-dessus : compte les pics isolés
     # d'une fenêtre (point >> médiane locale du voisinage) pour la classer
     # pic_1 / pic_2 / pic_3 / ... — calculée avant le passe-bas et la NCC.
-    peak_isolation_neighborhood: int = 20        # nb de points de part et d'autre pour la médiane locale
-    peak_isolation_factor: float = 50            # point = pic si |point| > facteur * médiane(|voisinage|)
-    peak_isolation_merge_gap: int = 50           # points-pics séparés de moins de X échantillons -> même pic
-    peak_isolation_low_level_pct: float = 0.80   # fraction du signal qui doit rester sous le seuil bas
-    peak_isolation_low_level_threshold: float = 25  # seuil "signal bas" (valeur absolue)
+    peak_isolation_neighborhood: int = 50        # nb de points de part et d'autre pour la médiane locale
+    peak_isolation_factor: float = 20            # point = pic si |point| > facteur * médiane(|voisinage|)
+    peak_isolation_merge_gap: int = 2           # points-pics séparés de moins de X échantillons -> même pic
+    peak_isolation_low_level_pct: float = 0.90   # fraction du signal qui doit rester sous le seuil bas
+    peak_isolation_low_level_threshold: float = 20  # seuil "signal bas" (valeur absolue)
+
+
 
     # ── Seuils NCC / détection ───────────────────────────────────────
-    ncc_threshold: float = 0.30
+    ncc_threshold: float = 0.7
     ncc_max_lag: int = 5000
-    ncc_type_threshold: float = 0.3
-    n_freq_bins: int = 100000
+    ncc_type_threshold: float = 0.5
+    n_freq_bins: int = 200000
 
     # ── Filtrage passe-bas (avant calcul de similarité NCC) ──────────────
-    lowpass_cutoff_hz: float = 2500
+
+    lowpass_cutoff_hz: float = 20000.0
 
     # ── Rapport détaillé par type ─────────────────────────────────────
     type_hist_bin_min: int = 10
 
     # ── Base de types persistante (globale, entre tous les runs) ─────────
     type_db_dir: str = "results/type_database"
-    global_type_ncc_threshold: float = 0.70
+    global_type_ncc_threshold: float = 0.7
 
     # ── Perf ──────────────────────────────────────────────────────────
     gpu_batch_size: int = 2048
@@ -71,7 +74,7 @@ class DataLakeConfig:
     data_lake_dir: str = "data_lake"
     chunk_size_base: int = 200_000
     gpu_sort_threshold: int = 300_000
-    n_workers: int = 5
+    n_workers: int = 2
 
 
 @dataclass
@@ -89,8 +92,10 @@ class BatchConfig:
         {"boitier": "boitier_1", "voie": 2, "dates": ["2026-03-17"]},
         {"boitier": "boitier_2", "voie": 1, "dates": ["2026-03-17"]},
     ])
+
     max_parallel: int = 1  # 1 = un seul job à la fois (GPU unique, comme avant la
                             # parallélisation) ; 0 = auto-détecté (nombre de GPUs)
+
     log_dir: str = "results/batch_logs"
     python_executable: str = ""  # "" = sys.executable (voir interface.py, qui préfère .venv/bin/python)
 
@@ -108,4 +113,4 @@ class CorrelationConfig:
     output_dir_name: str = "results/outputs_correlation"
     corr_window_s: float = 30.0
     hist_bin_min: int = 1
-    ncc_type_threshold: float = 0.70
+    ncc_type_threshold: float = 0.5

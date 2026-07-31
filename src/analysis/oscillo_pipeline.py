@@ -176,18 +176,20 @@ class OscilloPipeline:
                 print(f"Total événements pic (isolés, sans NCC) : {len(pic_events)}")
 
         # ── Pré-calcul GPU des métriques (fréquence dominante + NCC vs réf.) ──
-        # Les événements "pic" étant des événements à une seule fenêtre (qui
-        # EST sa propre référence), leur NCC vs référence est automatiquement
-        # sautée ci-dessous (non_ref_mask == False pour elles) : aucun calcul
-        # de ressemblance superflu sur ces fenêtres.
+        # Événements réguliers UNIQUEMENT : les événements "pic" n'ont besoin
+        # ni de fréquence dominante (un pic isolé n'a pas de fréquence
+        # significative à extraire) ni de NCC vs référence (événement à une
+        # seule fenêtre, qui EST sa propre référence) — les deux calculs sont
+        # sautés pour eux. build_signal_profile retombe sur 0.0 par défaut
+        # pour ces champs (dom_freq_map.get(idx, 0.0)).
         all_events = regular_events + pic_events
         all_events.sort(key=lambda ev: ev["debut"])
 
         dom_freq_map, ncc_map, dom_freqs4_map = {}, {}, {}
         t0 = time.time()
-        if len(all_events) > 0:
+        if len(regular_events) > 0:
             dom_freq_map, ncc_map, _is_ref_map, dom_freqs4_map = precompute_all_metrics_gpu(
-                all_events, windows, windows_ncc, time_arrays,
+                regular_events, windows, windows_ncc, time_arrays,
                 n_freq_bins=c.n_freq_bins, freq_chunk=c.freq_chunk,
                 ncc_max_lag=c.ncc_max_lag,
             )
