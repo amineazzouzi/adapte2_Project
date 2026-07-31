@@ -39,12 +39,13 @@ def export_enriched_html(signal_profile, base_output_dir, ref_plot_paths=None):
              "<tr><th>#</th><th>Type</th><th>Début</th><th>Fenêtres</th>"
              "<th>Durée (s)</th><th>Fréq. moy. (Hz)</th><th>NCC moy. vs réf.</th></tr>"]
     for ev in events:
-        mf  = np.mean(ev['dom_freqs']) if ev['dom_freqs'] else 0.0
-        mn  = np.mean(ev['ncc_vs_ref']) if ev['ncc_vs_ref'] else 1.0
-        ts  = ev['ref_timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+        mf    = np.mean(ev['dom_freqs']) if ev['dom_freqs'] else 0.0
+        mn    = np.mean(ev['ncc_vs_ref']) if ev['ncc_vs_ref'] else 1.0
+        ts    = ev['ref_timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+        label = ev.get('type_label', f"Type {ev['cluster_id']}")
         html.append(
             f"<tr><td>{ev['event_id']}</td>"
-            f"<td><span class='badge'>Type {ev['cluster_id']}</span></td>"
+            f"<td><span class='badge'>{label}</span></td>"
             f"<td>{ts}</td><td>{ev['window_count']}</td>"
             f"<td>{ev['duration_s']:.1f}</td><td>{mf:.1f}</td><td>{mn:.4f}</td></tr>"
         )
@@ -56,8 +57,9 @@ def export_enriched_html(signal_profile, base_output_dir, ref_plot_paths=None):
                  "<h2>6. Fenêtres de référence par événement</h2>"]
         for cid in sorted(by_cluster):
             c_events = sorted(by_cluster[cid], key=lambda e: e['event_id'])
+            label = c_events[0].get('type_label', f"Type {cid}")
             html.append(
-                f"<h3>Type {cid} &mdash; {len(c_events)} événement(s)</h3>"
+                f"<h3>{label} &mdash; {len(c_events)} événement(s)</h3>"
             )
             html.append(
                 "<div style='display:grid;grid-template-columns:"

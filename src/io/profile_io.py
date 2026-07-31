@@ -45,6 +45,7 @@ def serialize_signal_profile(signal_profile, output_dir):
             {
                 'event_id':          ev['event_id'],
                 'cluster_id':        ev['cluster_id'],
+                'type_label':        ev.get('type_label', f"Type {ev['cluster_id']}"),
                 'ref_timestamp':     ts(ev['ref_timestamp']),
                 'ref_dom_freq':      ev['ref_dom_freq'],
                 'ref_dom_freqs4':    ev.get('ref_dom_freqs4', [ev['ref_dom_freq'], 0.0, 0.0, 0.0]),

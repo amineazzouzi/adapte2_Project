@@ -84,19 +84,27 @@ def match_or_register_type(ref_window, type_db_dir, ncc_threshold):
             fcntl.flock(lock_fh, fcntl.LOCK_UN)
 
 
-def assign_global_types(signal_profile, type_db_dir, ncc_threshold):
+def assign_global_types(signal_profile, type_db_dir, ncc_threshold, skip_cluster_ids=None):
     """
     Pour chaque type LOCAL détecté dans ce run (cluster_id du clustering
     intra-signal, voir clustering.cluster_events_by_type), compare sa
     fenêtre de référence brute à la base de types globale et l'enregistre
     si elle est nouvelle. Retourne {local_cluster_id: global_type_id}.
+
+    skip_cluster_ids : cluster_id à ignorer (ex : types "pic_N" isolés par
+    classify_windows_by_peak_count, voir oscillo_pipeline.py) — leur type
+    est déjà connu par comptage de pics, pas besoin d'une comparaison NCC
+    supplémentaire contre la base globale.
     """
     events = signal_profile['events']
     if not events:
         return {}
 
+    skip_cluster_ids = skip_cluster_ids or set()
     by_cluster = defaultdict(list)
     for ev in events:
+        if ev['cluster_id'] in skip_cluster_ids:
+            continue
         by_cluster[ev['cluster_id']].append(ev)
 
     mapping = {}

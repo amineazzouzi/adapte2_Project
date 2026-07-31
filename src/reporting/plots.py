@@ -22,7 +22,7 @@ from src.reporting.palette import TYPE_COLORS, shared_pair_color
 
 def _plot_ref_window_worker(args):
     """Worker : génère et sauvegarde le plot de référence d'un événement."""
-    ev_id, cid, signal, time_ax, dom_freqs4, refs_dir, output_dir = args
+    ev_id, cid, label, signal, time_ax, dom_freqs4, refs_dir, output_dir = args
 
     t_rel  = time_seconds_from_axis(time_ax)
     ts_str = pd.to_datetime(time_ax[0]).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
@@ -31,7 +31,7 @@ def _plot_ref_window_worker(args):
     fig, ax = plt.subplots(figsize=(12, 4))
     ax.plot(t_rel, signal, color='firebrick', alpha=0.85, linewidth=0.8)
     ax.set_title(
-        f"Événement {ev_id:02d} — Type {cid} — Fenêtre de référence\n"
+        f"Événement {ev_id:02d} — {label} — Fenêtre de référence\n"
         f"{ts_str}  |  Fréq. dominantes : {freqs_str} Hz"
     )
     ax.set_xlabel("Temps relatif (s)")
@@ -59,8 +59,8 @@ def plot_reference_windows(signal_profile, time_arrays, output_dir, num_workers=
     os.makedirs(refs_dir, exist_ok=True)
 
     tasks = [
-        (ev['event_id'], ev['cluster_id'], ev['ref_window'],
-         time_arrays[ev['ref_win_idx']],
+        (ev['event_id'], ev['cluster_id'], ev.get('type_label', f"Type {ev['cluster_id']}"),
+         ev['ref_window'], time_arrays[ev['ref_win_idx']],
          ev.get('ref_dom_freqs4', [ev['ref_dom_freq'], 0.0, 0.0, 0.0]),
          refs_dir, output_dir)
         for ev in events
@@ -271,9 +271,12 @@ def plot_gantt_timeline(profiles, profiles_with_dirs, output_dir, color_map=None
     ax.grid(axis='x', linestyle='--', alpha=0.35)
 
     # Légende unifiée : une entrée par (signal, type)
+    label_by_pair = {(sig_key_from_signal_id(profile['signal_id']), ev['cluster_id']):
+                      ev.get('type_label', f"T{ev['cluster_id']}")
+                      for profile, _ in profiles_with_dirs for ev in profile['events']}
     legend_handles = [
         mpatches.Patch(color=col,
-                       label=f"{sig.split('/')[-1]} — T{cid}")
+                       label=f"{sig.split('/')[-1]} — {label_by_pair.get((sig, cid), f'T{cid}')}")
         for (sig, cid), col in sorted(legend_pairs.items())
     ]
     ax.legend(handles=legend_handles, title='Signal / Type', loc='upper right',
@@ -385,7 +388,7 @@ def plot_type_database_entry(type_id, ref_window, plots_dir):
     return fpath
 
 
-def plot_type_reference(cid, ref_window, count, output_dir):
+def plot_type_reference(cid, ref_window, count, output_dir, label=None):
     """
     Fenêtre de référence représentative d'un type (celle du 1er événement
     chronologique du type). Retourne le chemin relatif à output_dir.
@@ -396,7 +399,7 @@ def plot_type_reference(cid, ref_window, count, output_dir):
     color = TYPE_COLORS[cid % len(TYPE_COLORS)]
     fig, ax = plt.subplots(figsize=(6, 3))
     ax.plot(ref_window, color=color, linewidth=0.8)
-    ax.set_title(f"Type {cid}")
+    ax.set_title(label or f"Type {cid}")
     ax.set_xlabel("Échantillons")
     ax.set_ylabel("Amplitude")
     ax.grid(True, alpha=0.3)
@@ -408,7 +411,7 @@ def plot_type_reference(cid, ref_window, count, output_dir):
     return os.path.relpath(fpath, output_dir)
 
 
-def plot_type_occurrence_histogram(cid, timestamps, t_min, t_max, output_dir, bin_width_min=10):
+def plot_type_occurrence_histogram(cid, timestamps, t_min, t_max, output_dir, bin_width_min=10, label=None):
     """
     Histogramme d'apparition d'un type sur toute la durée d'analyse
     (bins de bin_width_min minutes, grille commune t_min -> t_max).
@@ -444,7 +447,7 @@ def plot_type_occurrence_histogram(cid, timestamps, t_min, t_max, output_dir, bi
     plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='right')
     ax.set_xlabel("Date / Heure")
     ax.set_ylabel(f"Fenêtres / {bin_width_min} min")
-    ax.set_title(f"Type {cid} — apparition dans le temps")
+    ax.set_title(f"{label or f'Type {cid}'} — apparition dans le temps")
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     ax.grid(axis='y', linestyle='--', alpha=0.3)
     plt.tight_layout()
@@ -475,12 +478,13 @@ def plot_all_type_summaries(signal_profile, output_dir, bin_width_min=10):
     for cid in sorted(by_cluster):
         c_events  = sorted(by_cluster[cid], key=lambda e: e['ref_timestamp'])
         ref_event = c_events[0]
+        label     = ref_event.get('type_label', f"Type {cid}")
         count     = sum(e['window_count'] for e in c_events)
         all_ts    = [t for e in c_events for t in e['window_timestamps']]
 
-        ref_rel  = plot_type_reference(cid, ref_event['ref_window'], count, output_dir)
+        ref_rel  = plot_type_reference(cid, ref_event['ref_window'], count, output_dir, label=label)
         hist_rel = plot_type_occurrence_histogram(
-            cid, all_ts, t_min, t_max, output_dir, bin_width_min=bin_width_min
+            cid, all_ts, t_min, t_max, output_dir, bin_width_min=bin_width_min, label=label
         )
         results[cid] = (ref_rel, hist_rel, count)
 

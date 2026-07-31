@@ -65,7 +65,7 @@ def cluster_events_by_type(anomaly_events, windows,
 def build_signal_profile(anomaly_events, windows, time_arrays,
                           dom_freq_map, ncc_map, cluster_labels,
                           dom_freqs4_map=None, signal_id="signal",
-                          peak_counts=None, peak_labels=None):
+                          peak_counts=None, peak_labels=None, type_labels=None):
     """
     Construit un dict structuré (SignalProfile) à partir des sorties du pipeline.
     Contient toutes les métadonnées nécessaires pour la corrélation et les exports.
@@ -83,6 +83,8 @@ def build_signal_profile(anomaly_events, windows, time_arrays,
         events_out.append({
             'event_id':          ev_idx,
             'cluster_id':        cluster_labels[ev_idx],
+            'type_label':        (type_labels[ev_idx] if type_labels is not None
+                                   else f"Type {cluster_labels[ev_idx]}"),
             'ref_win_idx':       ref_idx,
             'ref_timestamp':     win_ts[0],
             'ref_window':        windows[ref_idx],

@@ -131,30 +131,63 @@ class OscilloPipeline:
         else:
             windows_ncc = windows
 
-        # ── Groupement temporel par NCC (GPU) ───────────────────────────
-        t0 = time.time()
+        # ── Isolement des fenêtres "pic" (avant tout calcul de similarité) ──
+        # Une fenêtre classée pic_N (voir classify_windows_by_peak_count) est
+        # exclue du groupement temporel NCC et deviendra directement un
+        # événement à elle seule plus bas : on connaît déjà son type par le
+        # comptage de pics, donc aucune comparaison de ressemblance (NCC)
+        # n'est nécessaire pour elle.
         if len(is_anomaly) > 0:
-            anomaly_events = track_events_temporal_gpu(
-                windows_ncc, is_anomaly, timestamps,
+            is_pic_window = peak_labels != ""
+            regular_is_anomaly = is_anomaly.copy()
+            regular_is_anomaly[is_pic_window] = 0
+        else:
+            is_pic_window = np.array([], dtype=bool)
+            regular_is_anomaly = is_anomaly
+
+        # ── Groupement temporel par NCC (GPU) — fenêtres non-pic uniquement ──
+        t0 = time.time()
+        if len(regular_is_anomaly) > 0:
+            regular_events = track_events_temporal_gpu(
+                windows_ncc, regular_is_anomaly, timestamps,
                 threshold=c.ncc_threshold, max_lag=c.ncc_max_lag
             )
             # Fenêtre de référence de chaque événement = celle qui a le plus
             # grand max (signal brut) parmi toutes les fenêtres de l'événement
             # — pas forcément la première chronologiquement.
-            for event in anomaly_events:
+            for event in regular_events:
                 event["ref_idx"] = max(event["indices"], key=lambda i: windows[i].max())
-            print(f"\nTotal groupes (événements) : {len(anomaly_events)}")
+            print(f"\nTotal groupes (événements) NCC : {len(regular_events)}")
         else:
-            anomaly_events = []
+            regular_events = []
             print("Aucune fenêtre à traiter.")
         print(f"⏱️  Groupement NCC : {time.time()-t0:.2f}s")
 
-        # ── Pré-calcul GPU des métriques ────────────────────────────────
+        # ── Événements "pic" : une fenêtre isolée = un événement, sans NCC ──
+        pic_events = []
+        if len(is_pic_window) > 0:
+            for i in np.flatnonzero(is_pic_window):
+                pic_events.append({
+                    "debut": timestamps[i], "fin": timestamps[i],
+                    "indices": [int(i)], "sims": [], "ref_idx": int(i),
+                    "peak_label": str(peak_labels[i]),
+                })
+            if pic_events:
+                print(f"Total événements pic (isolés, sans NCC) : {len(pic_events)}")
+
+        # ── Pré-calcul GPU des métriques (fréquence dominante + NCC vs réf.) ──
+        # Les événements "pic" étant des événements à une seule fenêtre (qui
+        # EST sa propre référence), leur NCC vs référence est automatiquement
+        # sautée ci-dessous (non_ref_mask == False pour elles) : aucun calcul
+        # de ressemblance superflu sur ces fenêtres.
+        all_events = regular_events + pic_events
+        all_events.sort(key=lambda ev: ev["debut"])
+
         dom_freq_map, ncc_map, dom_freqs4_map = {}, {}, {}
         t0 = time.time()
-        if len(anomaly_events) > 0:
+        if len(all_events) > 0:
             dom_freq_map, ncc_map, _is_ref_map, dom_freqs4_map = precompute_all_metrics_gpu(
-                anomaly_events, windows, windows_ncc, time_arrays,
+                all_events, windows, windows_ncc, time_arrays,
                 n_freq_bins=c.n_freq_bins, freq_chunk=c.freq_chunk,
                 ncc_max_lag=c.ncc_max_lag,
             )
@@ -164,30 +197,62 @@ class OscilloPipeline:
 
         # ── Clustering par types + visualisations enrichies ─────────────
         signal_profile = None
-        if len(anomaly_events) > 0:
+        if len(all_events) > 0:
             t0 = time.time()
-            print("\n--- Clustering inter-événements (super-types) ---")
-            cluster_labels, _ncc_matrix = cluster_events_by_type(
-                anomaly_events, windows_ncc,
+            print("\n--- Clustering inter-événements (super-types), fenêtres régulières uniquement ---")
+            regular_cluster_labels, _ncc_matrix = cluster_events_by_type(
+                regular_events, windows_ncc,
                 gpu_batch_size=c.gpu_batch_size, ncc_max_lag=c.ncc_max_lag,
                 ncc_type_threshold=c.ncc_type_threshold,
             )
-            n_types = max(cluster_labels, default=-1) + 1
-            print(f"  -> {len(anomaly_events)} événements → {n_types} types "
+            n_regular_types = max(regular_cluster_labels, default=-1) + 1
+            print(f"  -> {len(regular_events)} événement(s) régulier(s) → {n_regular_types} type(s) "
                   f"(seuil NCC_TYPE={c.ncc_type_threshold})")
 
+            # Types "pic_N" : un type par nombre de pics distinct rencontré,
+            # numéroté à la suite des types NCC réguliers — pas de calcul NCC
+            # inter-événements pour ces types, déjà connus par construction.
+            distinct_pic_labels = sorted(
+                {ev["peak_label"] for ev in pic_events},
+                key=lambda lbl: int(lbl.split("_")[1])
+            )
+            pic_label_to_cid = {
+                lbl: n_regular_types + rank for rank, lbl in enumerate(distinct_pic_labels)
+            }
+            if pic_label_to_cid:
+                print(f"  -> {len(pic_events)} événement(s) pic → {len(pic_label_to_cid)} type(s) "
+                      f"({', '.join(distinct_pic_labels)})")
+
+            # cluster_labels / type_labels doivent suivre le même ordre que
+            # all_events (trié par date de début, cf. plus haut) — on les
+            # reconstruit événement par événement plutôt que de concaténer
+            # les deux listes régulier/pic dans leur ordre d'origine.
+            regular_cid_by_id = dict(zip((id(ev) for ev in regular_events), regular_cluster_labels))
+            cluster_labels, type_labels = [], []
+            for ev in all_events:
+                if "peak_label" in ev:
+                    cid = pic_label_to_cid[ev["peak_label"]]
+                    cluster_labels.append(cid)
+                    type_labels.append(ev["peak_label"])
+                else:
+                    cid = regular_cid_by_id[id(ev)]
+                    cluster_labels.append(cid)
+                    type_labels.append(f"Type {cid}")
+
             signal_profile = build_signal_profile(
-                anomaly_events, windows, time_arrays,
+                all_events, windows, time_arrays,
                 dom_freq_map, ncc_map, cluster_labels,
                 dom_freqs4_map=dom_freqs4_map,
                 signal_id=signal_id,
                 peak_counts=peak_counts, peak_labels=peak_labels,
+                type_labels=type_labels,
             )
 
             print("--- Association aux types de la base globale (sans filtre passe-bas) ---")
             assign_global_types(
                 signal_profile, c.type_db_dir,
-                ncc_threshold=c.global_type_ncc_threshold
+                ncc_threshold=c.global_type_ncc_threshold,
+                skip_cluster_ids=set(pic_label_to_cid.values()),
             )
 
             print("--- Génération des visualisations enrichies ---")
