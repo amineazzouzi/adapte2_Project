@@ -12,7 +12,9 @@ from src.core.paths import output_dir_for, signal_id_for
 from src.io.datalake_reader import load_from_datalake
 from src.io.raw_file_loader import load_all_oscillo_files
 from src.io.profile_io import save_type_windows, serialize_signal_profile
-from src.signal_processing.windowing import filter_anomaly_windows, filter_by_peak_threshold
+from src.signal_processing.windowing import (
+    filter_anomaly_windows, filter_by_peak_threshold, classify_windows_by_peak_count,
+)
 from src.signal_processing.filtering import lowpass_filter_batch
 from src.analysis.event_tracking import track_events_temporal_gpu, precompute_all_metrics_gpu
 from src.analysis.clustering import cluster_events_by_type, build_signal_profile
@@ -95,6 +97,29 @@ class OscilloPipeline:
         else:
             is_anomaly = np.array([], dtype=int)
 
+        # ── Classification par nombre de pics isolés (avant NCC) ─────────
+        # Méthode indépendante du filtrage ci-dessus : compte les pics isolés
+        # de chaque fenêtre (point >> médiane locale de son voisinage) pour
+        # la classer pic_1 / pic_2 / pic_3 / ... — voir classify_windows_by_peak_count.
+        if len(windows) > 0:
+            t0 = time.time()
+            peak_counts, peak_labels = classify_windows_by_peak_count(
+                windows,
+                neighborhood_size=c.peak_isolation_neighborhood,
+                peak_factor=c.peak_isolation_factor,
+                merge_gap=c.peak_isolation_merge_gap,
+                low_level_pct=c.peak_isolation_low_level_pct,
+                low_level_threshold=c.peak_isolation_low_level_threshold,
+            )
+            n_classified = int(np.sum(peak_labels != ""))
+            print(f"Fenêtres classées par nombre de pics : {n_classified} / {len(windows)} "
+                  f"(facteur={c.peak_isolation_factor}, seuil bas={c.peak_isolation_low_level_threshold}, "
+                  f"{c.peak_isolation_low_level_pct:.0%} du signal sous ce seuil)")
+            print(f"⏱️  Classification pics : {time.time()-t0:.2f}s")
+        else:
+            peak_counts = np.array([], dtype=int)
+            peak_labels = np.array([], dtype=object)
+
         # ── Filtrage passe-bas (avant tout calcul de similarité NCC) ─────
         # Retire le bruit haute fréquence (> lowpass_cutoff_hz) qui pollue la
         # corrélation croisée. Le signal brut reste utilisé pour la détection
@@ -155,7 +180,8 @@ class OscilloPipeline:
                 anomaly_events, windows, time_arrays,
                 dom_freq_map, ncc_map, cluster_labels,
                 dom_freqs4_map=dom_freqs4_map,
-                signal_id=signal_id
+                signal_id=signal_id,
+                peak_counts=peak_counts, peak_labels=peak_labels,
             )
 
             print("--- Association aux types de la base globale (sans filtre passe-bas) ---")

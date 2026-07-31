@@ -8,6 +8,7 @@ remove_dc_offset).
 """
 
 import numpy as np
+from scipy.ndimage import median_filter
 
 
 def remove_dc_offset(all_windows):
@@ -93,3 +94,57 @@ def filter_by_peak_threshold(windows, threshold=30):
     max_val = windows.max(axis=1)
     min_val = windows.min(axis=1)
     return ((max_val >= threshold) & (np.abs(min_val) >= threshold)).astype(int)
+
+
+def classify_windows_by_peak_count(windows, neighborhood_size=20, peak_factor=50,
+                                    merge_gap=50, low_level_pct=0.80,
+                                    low_level_threshold=25):
+    """
+    Classe chaque fenêtre par nombre de pics isolés (pic_1, pic_2, pic_3, …) —
+    méthode indépendante de filter_anomaly_windows / filter_by_peak_threshold,
+    calculée avant le filtrage passe-bas et le calcul de similarité NCC (le
+    pic est un phénomène haute fréquence que le passe-bas effacerait).
+
+    Un point est un pic isolé si sa valeur absolue dépasse peak_factor fois
+    la médiane des valeurs absolues de son voisinage (fenêtre glissante de
+    2*neighborhood_size+1 points ; médiane plutôt que moyenne pour ne pas
+    être faussée par un pic voisin proche) ET dépasse low_level_threshold
+    (évite qu'un voisinage quasi nul ne déclenche un faux pic sur du bruit
+    de fond).
+
+    Des points-pics consécutifs séparés de moins de merge_gap échantillons
+    sont fusionnés en un seul pic (un pic physique s'étale souvent sur
+    plusieurs échantillons).
+
+    Une fenêtre n'est classée "pic_N" que si le reste du signal est resté
+    bas : au moins low_level_pct (défaut 80%) des échantillons de la fenêtre
+    doivent être sous low_level_threshold en valeur absolue — sinon la
+    fenêtre est laissée non classée (label "").
+
+    Retourne : (n_peaks: array int (N,), labels: array str (N,))
+               labels[i] == "" si la fenêtre ne qualifie pas (niveau de fond
+               trop élevé) ou si aucun pic n'est détecté.
+    """
+    N, L = windows.shape
+    abs_signal = np.abs(windows)
+
+    local_median = median_filter(abs_signal, size=(1, 2 * neighborhood_size + 1), mode='nearest')
+    is_peak_point = (abs_signal > peak_factor * local_median) & (abs_signal > low_level_threshold)
+
+    frac_below = np.mean(abs_signal <= low_level_threshold, axis=1)
+    qualifies = frac_below >= low_level_pct
+
+    n_peaks = np.zeros(N, dtype=int)
+    for i in range(N):
+        idx = np.flatnonzero(is_peak_point[i])
+        if len(idx) == 0:
+            continue
+        gaps = np.diff(idx)
+        n_peaks[i] = 1 + int(np.sum(gaps > merge_gap))
+
+    labels = np.array([
+        f"pic_{n_peaks[i]}" if (qualifies[i] and n_peaks[i] > 0) else ""
+        for i in range(N)
+    ], dtype=object)
+
+    return n_peaks, labels

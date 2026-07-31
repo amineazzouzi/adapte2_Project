@@ -28,7 +28,17 @@ class SignalConfig:
     anomaly_threshold: float = 0.0
     # 2. filter_by_peak_threshold : pic positif ET pic négatif (abs) au-dessus
     #    du seuil, combiné en ET avec le filtre ci-dessus
-    peak_threshold: float = 30.0
+    peak_threshold: float = 25
+
+    # ── Classification par nombre de pics isolés (windowing.py::classify_windows_by_peak_count) ──
+    # Méthode indépendante du filtrage ci-dessus : compte les pics isolés
+    # d'une fenêtre (point >> médiane locale du voisinage) pour la classer
+    # pic_1 / pic_2 / pic_3 / ... — calculée avant le passe-bas et la NCC.
+    peak_isolation_neighborhood: int = 20        # nb de points de part et d'autre pour la médiane locale
+    peak_isolation_factor: float = 50            # point = pic si |point| > facteur * médiane(|voisinage|)
+    peak_isolation_merge_gap: int = 50           # points-pics séparés de moins de X échantillons -> même pic
+    peak_isolation_low_level_pct: float = 0.80   # fraction du signal qui doit rester sous le seuil bas
+    peak_isolation_low_level_threshold: float = 25  # seuil "signal bas" (valeur absolue)
 
     # ── Seuils NCC / détection ───────────────────────────────────────
     ncc_threshold: float = 0.30
@@ -37,7 +47,7 @@ class SignalConfig:
     n_freq_bins: int = 100000
 
     # ── Filtrage passe-bas (avant calcul de similarité NCC) ──────────────
-    lowpass_cutoff_hz: float = 3000.0
+    lowpass_cutoff_hz: float = 2500
 
     # ── Rapport détaillé par type ─────────────────────────────────────
     type_hist_bin_min: int = 10
