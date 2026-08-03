@@ -1,10 +1,33 @@
 """
-Fréquence dominante par FFT — calcul vectorisé (remplace une boucle Python
-O(n_freq * n_pts) par une FFT standard par fenêtre).
+Fréquence dominante par DFT directe sur une grille de fréquences fixe —
+même méthode que le script de référence (somme de tension * exp(-j*2*pi*f*t)
+sur [FMIN_HZ, FMAX_HZ] par pas de DF_HZ). Pas de FFT, pas de fenêtrage.
+
+Vectorisé sur (fenêtre, fréquence) au lieu des boucles Python imbriquées
+d'origine, et batché + envoyé sur GPU (CuPy) quand disponible — la DFT
+directe reste ~5-10x plus lente qu'une FFT à volume égal (O(n_freq*L) au
+lieu de O(L log L)), le batching GPU est ce qui la rend praticable en
+pipeline (~190 fenêtres/s mesuré ici, contre ~7/s en boucle naïve).
 """
 
 import numpy as np
 import pandas as pd
+
+from src.core.gpu import GPU_AVAILABLE
+
+if GPU_AVAILABLE:
+    import cupy as cp
+
+FMIN_HZ = 10      # fréquence minimale
+FMAX_HZ = 2500    # fréquence maximale
+DF_HZ = 10        # résolution fréquentielle (Hz)
+
+# Nombre de fenêtres traitées ensemble par appel DFT vectorisé. Borne la
+# VRAM utilisée (tenseur de phase (batch, n_freq, L) en complex64) — au-delà
+# de ~128 sur un GPU 4 Go on obtient un OutOfMemoryError ; 64 laisse de la
+# marge quand plusieurs jobs du pipeline partagent le même GPU (voir
+# batch_pipeline.py, un process par signal, round-robin sur les GPU).
+WINDOW_BATCH_SIZE = 64
 
 
 def time_seconds_from_axis(time_axis):
@@ -21,121 +44,95 @@ def time_seconds_from_axis(time_axis):
     return t.astype(np.float64)
 
 
-def _parabolic_refine(mag_full, k, df):
+def _dft_amplitude_batch(xp, signals_batch, t_rel_batch, freqs, L):
     """
-    Interpolation parabolique (3 points) autour du bin de pic k pour affiner
-    la fréquence détectée au-delà de la résolution grossière du bin
-    (df = 1/durée). Sans ça, un signal à 50 Hz peut être rapporté au bin FFT
-    le plus proche (ex: 52 Hz) plutôt qu'à la vraie fréquence, dès que la
-    fenêtre ne contient pas un nombre entier de cycles. k doit être un
-    indice interne au tableau (ni 0, ni le dernier).
+    DFT directe (pas de FFT), vectorisée sur un batch de fenêtres.
+    signals_batch, t_rel_batch : (B, L)  ;  freqs : (n_freq,)
+    Retourne (B, n_freq) — même formule que le script de référence
+    (2/(L-1) * |somme signal * exp(-j*2*pi*f*t)|), juste vectorisée.
     """
-    y_l, y_c, y_r = mag_full[k - 1], mag_full[k], mag_full[k + 1]
-    denom = y_l - 2 * y_c + y_r
-    if denom == 0:
-        return 0.0
-    offset = 0.5 * (y_l - y_r) / denom
-    return float(np.clip(offset, -0.5, 0.5)) * df
+    phase = xp.exp((-2j * xp.pi * freqs[None, :, None] * t_rel_batch[:, None, :]).astype(xp.complex64))
+    dft = xp.einsum('bfl,bl->bf', phase, signals_batch.astype(xp.complex64))
+    return xp.abs((2.0 / (L - 1)) * dft)
+
+
+def _compute_amplitudes(signals, time_axes, xp_mod=None):
+    """
+    Calcule l'amplitude DFT (N, n_freq) pour toutes les fenêtres, batché et
+    sur GPU si disponible. Retourne (amplitudes, freqs, valid_mask).
+    """
+    N, L = signals.shape
+    freqs = np.arange(FMIN_HZ, FMAX_HZ + DF_HZ, DF_HZ).astype(np.float32)
+    amplitudes = np.zeros((N, len(freqs)), dtype=np.float32)
+
+    t_rel = np.empty((N, L), dtype=np.float32)
+    valid = np.zeros(N, dtype=bool)
+    for i in range(N):
+        t_secs = time_seconds_from_axis(time_axes[i])
+        duration = t_secs[-1] - t_secs[0]
+        if duration <= 0:
+            continue
+        valid[i] = True
+        t_rel[i] = (t_secs - t_secs[0]).astype(np.float32)
+
+    valid_idx = np.where(valid)[0]
+    if len(valid_idx) == 0:
+        return amplitudes, freqs, valid
+
+    xp = xp_mod if xp_mod is not None else (cp if GPU_AVAILABLE else np)
+    freqs_x = xp.asarray(freqs)
+
+    for s in range(0, len(valid_idx), WINDOW_BATCH_SIZE):
+        chunk = valid_idx[s:s + WINDOW_BATCH_SIZE]
+        sb = xp.asarray(signals[chunk].astype(np.float32))
+        tb = xp.asarray(t_rel[chunk])
+        amp = _dft_amplitude_batch(xp, sb, tb, freqs_x, L)
+        amplitudes[chunk] = cp.asnumpy(amp) if xp is not np else amp
+
+    return amplitudes, freqs, valid
 
 
 def compute_dominant_frequency_batch_gpu(signals, time_axes, n_freq,  # noqa: ARG001
                                           freq_chunk, xp_mod=None):     # noqa: ARG001
     """
-    Calcule la fréquence dominante par FFT standard.
-
-    Pour chaque fenêtre, dt_effectif = durée_réelle / (L-1) est déduit des
-    vrais timestamps — aucun dt fixe supposé. La FFT np.fft.rfft donne
-    l'axe fréquentiel correct même si l'échantillonnage est irrégulier.
-
-    Une fenêtre de Hann est appliquée avant la FFT (réduit la fuite
-    spectrale due à la troncature — la fenêtre analysée ne contient
-    généralement pas un nombre entier de cycles du signal), puis le pic est
-    affiné par interpolation parabolique (voir _parabolic_refine). Sans ces
-    deux corrections, l'estimation est biaisée d'un bin FFT entier en
-    moyenne (ex: 50 Hz mesuré à 52 Hz) — validé empiriquement sur signal de
-    test 50 Hz : biais brut ≈ 2.1 Hz, biais avec Hann + parabolique ≈ 0.2 Hz.
-    Le signal brut (non fenêtré) n'est utilisé nulle part ailleurs — cette
-    transformation reste locale à l'estimation de fréquence.
+    Calcule la fréquence dominante par DFT directe sur [FMIN_HZ, FMAX_HZ].
 
     signals    : array NumPy (N, L)
     time_axes  : array NumPy (N, L) (datetime64 ou numérique)
     Retourne   : array NumPy (N,) des fréquences dominantes (Hz)
     """
-    N, L = signals.shape
-    dominant_freqs = np.zeros(N, dtype=np.float64)
-
-    t_secs = np.empty((N, L), dtype=np.float64)
-    for i in range(N):
-        t_secs[i] = time_seconds_from_axis(time_axes[i])
-
-    durations = t_secs[:, -1] - t_secs[:, 0]
-    valid_idx = np.where(durations > 0)[0]
-    if len(valid_idx) == 0:
-        return dominant_freqs
-
-    # FFT vectorisée sur toutes les fenêtres en une seule opération
-    sigs_centered = signals - signals.mean(axis=1, keepdims=True)
-    sigs_windowed = sigs_centered * np.hanning(L)[None, :]
-    spectra = np.abs(np.fft.rfft(sigs_windowed, axis=1))  # (N, L//2+1)
-
-    for i in valid_idx:
-        dt_eff = durations[i] / (L - 1)          # dt déduit de la durée réelle
-        freqs  = np.fft.rfftfreq(L, d=dt_eff)    # axe fréquentiel en Hz
-        df     = freqs[1] - freqs[0] if len(freqs) > 1 else 0.0
-        mag    = spectra[i]
-        k      = 1 + int(np.argmax(mag[1:]))     # ignorer la composante DC (indice 0)
-        refined = freqs[k]
-        if 0 < k < len(mag) - 1:
-            refined += _parabolic_refine(mag, k, df)
-        dominant_freqs[i] = refined
-
+    amplitudes, freqs, valid = _compute_amplitudes(signals, time_axes, xp_mod)
+    dominant_freqs = np.zeros(signals.shape[0], dtype=np.float64)
+    if valid.any():
+        dominant_freqs[valid] = freqs[np.argmax(amplitudes[valid], axis=1)]
     return dominant_freqs
 
 
 def compute_top_n_dominant_frequencies_batch(signals, time_axes, top_n=4):
     """
     Variante de compute_dominant_frequency_batch_gpu qui retourne, pour
-    chaque fenêtre, les top_n pics spectraux (magnitude FFT décroissante)
-    au lieu du seul maximum — utilisé pour l'affichage informatif sur les
+    chaque fenêtre, les top_n pics spectraux (amplitude décroissante) au
+    lieu du seul maximum — utilisé pour l'affichage informatif sur les
     plots de référence (harmoniques / composantes secondaires du signal).
+
+    Sélection simple par amplitude brute (top_n fréquences les plus
+    fortes) : deux fréquences voisines d'un même pic peuvent donc
+    apparaître ensemble dans le résultat.
 
     signals    : array NumPy (N, L)
     time_axes  : array NumPy (N, L) (datetime64 ou numérique)
     Retourne   : array NumPy (N, top_n) des fréquences (Hz), triées par
-                 magnitude décroissante ; complété de 0.0 si une fenêtre a
-                 moins de top_n pics distincts.
+                 amplitude décroissante.
     """
-    N, L = signals.shape
+    amplitudes, freqs, valid = _compute_amplitudes(signals, time_axes)
+    N = signals.shape[0]
     top_freqs = np.zeros((N, top_n), dtype=np.float64)
+    n_pick = min(top_n, len(freqs))
 
-    t_secs = np.empty((N, L), dtype=np.float64)
-    for i in range(N):
-        t_secs[i] = time_seconds_from_axis(time_axes[i])
-
-    durations = t_secs[:, -1] - t_secs[:, 0]
-    valid_idx = np.where(durations > 0)[0]
-    if len(valid_idx) == 0:
-        return top_freqs
-
-    sigs_centered = signals - signals.mean(axis=1, keepdims=True)
-    sigs_windowed = sigs_centered * np.hanning(L)[None, :]
-    spectra = np.abs(np.fft.rfft(sigs_windowed, axis=1))  # (N, L//2+1)
-
-    for i in valid_idx:
-        dt_eff = durations[i] / (L - 1)          # dt déduit de la durée réelle
-        freqs  = np.fft.rfftfreq(L, d=dt_eff)    # axe fréquentiel en Hz
-        df     = freqs[1] - freqs[0] if len(freqs) > 1 else 0.0
-        mag_full = spectra[i]
-        mag = mag_full[1:]                        # ignorer la composante DC pour la sélection
-        n_pick = min(top_n, len(mag))
-        top_idx = np.argpartition(mag, -n_pick)[-n_pick:]
-        top_idx = top_idx[np.argsort(mag[top_idx])[::-1]]  # tri décroissant
-        for j, idx in enumerate(top_idx):
-            k = 1 + int(idx)
-            refined = freqs[k]
-            if 0 < k < len(mag_full) - 1:
-                refined += _parabolic_refine(mag_full, k, df)
-            top_freqs[i, j] = refined
+    for i in np.where(valid)[0]:
+        top_idx = np.argpartition(amplitudes[i], -n_pick)[-n_pick:]
+        top_idx = top_idx[np.argsort(amplitudes[i][top_idx])[::-1]]  # tri décroissant
+        top_freqs[i, :n_pick] = freqs[top_idx]
 
     return top_freqs
 
