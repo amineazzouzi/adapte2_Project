@@ -43,9 +43,9 @@ class SignalConfig:
 
 
     # ── Seuils NCC / détection ───────────────────────────────────────
-    ncc_threshold: float = 0.7
+    ncc_threshold: float = 0.8
     ncc_max_lag: int = 5000
-    ncc_type_threshold: float = 0.5
+    ncc_type_threshold: float = 0.8
     n_freq_bins: int = 200000
 
     # ── Filtrage passe-bas (avant calcul de similarité NCC) ──────────────
@@ -57,7 +57,7 @@ class SignalConfig:
 
     # ── Base de types persistante (globale, entre tous les runs) ─────────
     type_db_dir: str = "results/type_database"
-    global_type_ncc_threshold: float = 0.7
+    global_type_ncc_threshold: float = 0.8
 
     # ── Perf ──────────────────────────────────────────────────────────
     gpu_batch_size: int = 2048
@@ -113,4 +113,4 @@ class CorrelationConfig:
     output_dir_name: str = "results/outputs_correlation"
     corr_window_s: float = 30.0
     hist_bin_min: int = 1
-    ncc_type_threshold: float = 0.5
+    ncc_type_threshold: float = 0.8

@@ -211,19 +211,19 @@ class OscilloPipeline:
             print(f"  -> {len(regular_events)} événement(s) régulier(s) → {n_regular_types} type(s) "
                   f"(seuil NCC_TYPE={c.ncc_type_threshold})")
 
-            # Types "pic_N" : un type par nombre de pics distinct rencontré,
-            # numéroté à la suite des types NCC réguliers — pas de calcul NCC
-            # inter-événements pour ces types, déjà connus par construction.
-            distinct_pic_labels = sorted(
-                {ev["peak_label"] for ev in pic_events},
-                key=lambda lbl: int(lbl.split("_")[1])
-            )
+            # Tous les événements "pic" (quel que soit leur nombre de pics
+            # isolés, pic_1 / pic_2 / pic_3 / …) sont regroupés dans un seul
+            # et même type "type : pic", numéroté à la suite des types NCC
+            # réguliers — pas de calcul NCC inter-événements pour ce type,
+            # déjà connu par construction.
+            PIC_TYPE_LABEL = "type : pic"
+            pic_cid = n_regular_types
             pic_label_to_cid = {
-                lbl: n_regular_types + rank for rank, lbl in enumerate(distinct_pic_labels)
+                lbl: pic_cid for lbl in {ev["peak_label"] for ev in pic_events}
             }
             if pic_label_to_cid:
-                print(f"  -> {len(pic_events)} événement(s) pic → {len(pic_label_to_cid)} type(s) "
-                      f"({', '.join(distinct_pic_labels)})")
+                print(f"  -> {len(pic_events)} événement(s) pic → 1 type "
+                      f"({PIC_TYPE_LABEL}, regroupant {', '.join(sorted(pic_label_to_cid))})")
 
             # cluster_labels / type_labels doivent suivre le même ordre que
             # all_events (trié par date de début, cf. plus haut) — on les
@@ -233,9 +233,8 @@ class OscilloPipeline:
             cluster_labels, type_labels = [], []
             for ev in all_events:
                 if "peak_label" in ev:
-                    cid = pic_label_to_cid[ev["peak_label"]]
-                    cluster_labels.append(cid)
-                    type_labels.append(ev["peak_label"])
+                    cluster_labels.append(pic_cid)
+                    type_labels.append(PIC_TYPE_LABEL)
                 else:
                     cid = regular_cid_by_id[id(ev)]
                     cluster_labels.append(cid)
