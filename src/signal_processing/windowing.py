@@ -9,6 +9,7 @@ remove_dc_offset).
 
 import numpy as np
 from scipy.ndimage import median_filter
+from sklearn.cluster import KMeans
 
 
 def remove_dc_offset(all_windows):
@@ -96,55 +97,82 @@ def filter_by_peak_threshold(windows, threshold=30):
     return ((max_val >= threshold) & (np.abs(min_val) >= threshold)).astype(int)
 
 
-def classify_windows_by_peak_count(windows, neighborhood_size=20, peak_factor=50,
-                                    merge_gap=50, low_level_pct=0.80,
-                                    low_level_threshold=25):
+def classify_windows_by_peak_kmeans(windows, search_width=10, min_cluster_separation=12):
     """
-    Classe chaque fenêtre par nombre de pics isolés (pic_1, pic_2, pic_3, …) —
-    méthode indépendante de filter_anomaly_windows / filter_by_peak_threshold,
-    calculée avant le filtrage passe-bas et le calcul de similarité NCC (le
-    pic est un phénomène haute fréquence que le passe-bas effacerait).
+    Classe chaque fenêtre par nombre de pics isolés (pic_1, pic_2, pic_3, …)
+    par segmentation + KMeans — méthode indépendante de filter_anomaly_windows
+    / filter_by_peak_threshold, calculée avant le filtrage passe-bas et le
+    calcul de similarité NCC (le pic est un phénomène haute fréquence que le
+    passe-bas effacerait). Voir pic_kmeans_explorer.ipynb pour l'exploration
+    interactive de cette approche.
 
-    Un point est un pic isolé si sa valeur absolue dépasse peak_factor fois
-    la médiane des valeurs absolues de son voisinage (fenêtre glissante de
-    2*neighborhood_size+1 points ; médiane plutôt que moyenne pour ne pas
-    être faussée par un pic voisin proche) ET dépasse low_level_threshold
-    (évite qu'un voisinage quasi nul ne déclenche un faux pic sur du bruit
-    de fond).
+    Pour chaque fenêtre :
+      1. Découpe en segments de search_width échantillons.
+      2. Score de chaque segment = max(signal**4) sur le segment (toujours
+         positif, amplifie fortement l'écart entre le fond et un pic).
+      3. KMeans (2 clusters) sur les scores des segments -> le cluster "pic"
+         est celui dont le centre est le plus élevé.
 
-    Des points-pics consécutifs séparés de moins de merge_gap échantillons
-    sont fusionnés en un seul pic (un pic physique s'étale souvent sur
-    plusieurs échantillons).
+    Un segment est retenu comme vrai pic si :
+      1. Son score dépasse (ou atteint) le centre du cluster "pic" lui-même
+         — pas juste l'appartenance au cluster KMeans (qui inclut aussi les
+         segments plus faibles que la moyenne de ce cluster). Le ">=" (et pas
+         ">" strict) est nécessaire : un segment seul dans le cluster "pic" a
+         un score exactement égal au centre de son propre cluster (moyenne
+         d'un seul point), donc ">" l'exclurait toujours.
+      2. La séparation entre les deux centres (centre_pic / centre_normal)
+         dépasse min_cluster_separation, sinon on considère qu'il n'y a pas
+         de vrai pic dans la fenêtre (aucun segment retenu).
 
-    Une fenêtre n'est classée "pic_N" que si le reste du signal est resté
-    bas : au moins low_level_pct (défaut 80%) des échantillons de la fenêtre
-    doivent être sous low_level_threshold en valeur absolue — sinon la
-    fenêtre est laissée non classée (label "").
+    Les segments-pics adjacents sont fusionnés en un seul pic (un pic
+    physique s'étale souvent sur plusieurs segments).
 
     Retourne : (n_peaks: array int (N,), labels: array str (N,))
-               labels[i] == "" si la fenêtre ne qualifie pas (niveau de fond
-               trop élevé) ou si aucun pic n'est détecté.
+               labels[i] == "" si aucun pic n'est détecté dans la fenêtre.
     """
     N, L = windows.shape
-    abs_signal = np.abs(windows)
-
-    local_median = median_filter(abs_signal, size=(1, 2 * neighborhood_size + 1), mode='nearest')
-    is_peak_point = (abs_signal > peak_factor * local_median) & (abs_signal > low_level_threshold)
-
-    frac_below = np.mean(abs_signal <= low_level_threshold, axis=1)
-    qualifies = frac_below >= low_level_pct
+    n_seg = L // search_width
+    trimmed = windows[:, :search_width * n_seg].reshape(N, n_seg, search_width)
+    seg_scores = np.max(trimmed.astype(np.float64) ** 4, axis=2)  # (N, n_seg)
 
     n_peaks = np.zeros(N, dtype=int)
-    for i in range(N):
-        idx = np.flatnonzero(is_peak_point[i])
-        if len(idx) == 0:
-            continue
-        gaps = np.diff(idx)
-        n_peaks[i] = 1 + int(np.sum(gaps > merge_gap))
+    labels = np.full(N, "", dtype=object)
 
-    labels = np.array([
-        f"pic_{n_peaks[i]}" if (qualifies[i] and n_peaks[i] > 0) else ""
-        for i in range(N)
-    ], dtype=object)
+    for i in range(N):
+        scores = seg_scores[i]
+        km = KMeans(n_clusters=2, random_state=0, n_init=10).fit(scores.reshape(-1, 1))
+        centers = km.cluster_centers_.flatten()
+        pic_cluster = int(np.argmax(centers))
+        other_cluster = 1 - pic_cluster
+
+        separation = centers[pic_cluster] / max(centers[other_cluster], 1e-9)
+        if separation < min_cluster_separation:
+            continue
+
+        is_true_pic_seg = scores >= centers[pic_cluster]
+        true_segs = np.flatnonzero(is_true_pic_seg)
+        if len(true_segs) == 0:
+            continue
+
+        gaps = np.diff(true_segs)
+        n_peaks[i] = 1 + int(np.sum(gaps > 1))
+        labels[i] = f"pic_{n_peaks[i]}"
 
     return n_peaks, labels
+
+
+def compute_window_energy(windows, median_filter_size=5):
+    """
+    Énergie "brute" de chaque fenêtre : somme des valeurs absolues du signal
+    après filtre médian (lisse le bruit haute fréquence avant de sommer) —
+    PAS de carré ni de puissance 4, volontairement différent du score de
+    classify_windows_by_peak_kmeans. Sert à distinguer, parmi les fenêtres
+    déjà classées "pic", celles qui comptent aussi comme "pic + forme" (voir
+    pic_kmeans_explorer.ipynb, seuil validé = 10000 avec filtre taille 5).
+
+    Vectorisé sur tout le batch en une seule opération NumPy/SciPy.
+
+    Retourne : array float (N,)
+    """
+    filtered = median_filter(windows, size=(1, median_filter_size), mode='nearest')
+    return np.sum(np.abs(filtered), axis=1)

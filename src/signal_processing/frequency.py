@@ -92,8 +92,7 @@ def _compute_amplitudes(signals, time_axes, xp_mod=None):
     return amplitudes, freqs, valid
 
 
-def compute_dominant_frequency_batch_gpu(signals, time_axes, n_freq,  # noqa: ARG001
-                                          freq_chunk, xp_mod=None):     # noqa: ARG001
+def compute_dominant_frequency_batch_gpu(signals, time_axes, xp_mod=None):
     """
     Calcule la fréquence dominante par DFT directe sur [FMIN_HZ, FMAX_HZ].
 
@@ -137,10 +136,9 @@ def compute_top_n_dominant_frequencies_batch(signals, time_axes, top_n=4):
     return top_freqs
 
 
-def compute_dominant_frequency_single(signal, time_axis, n_freq, freq_chunk):
+def compute_dominant_frequency_single(signal, time_axis):
     """Version scalaire (compat. API originale)."""
     res = compute_dominant_frequency_batch_gpu(
-        np.asarray(signal)[None, :], np.asarray(time_axis, dtype=object)[None, :],
-        n_freq=n_freq, freq_chunk=freq_chunk
+        np.asarray(signal)[None, :], np.asarray(time_axis, dtype=object)[None, :]
     )
     return float(res[0])

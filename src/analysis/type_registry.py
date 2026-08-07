@@ -92,7 +92,7 @@ def assign_global_types(signal_profile, type_db_dir, ncc_threshold, skip_cluster
     si elle est nouvelle. Retourne {local_cluster_id: global_type_id}.
 
     skip_cluster_ids : cluster_id à ignorer (ex : types "pic_N" isolés par
-    classify_windows_by_peak_count, voir oscillo_pipeline.py) — leur type
+    classify_windows_by_peak_kmeans, voir oscillo_pipeline.py) — leur type
     est déjà connu par comptage de pics, pas besoin d'une comparaison NCC
     supplémentaire contre la base globale.
     """

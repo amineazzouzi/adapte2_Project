@@ -30,23 +30,26 @@ class SignalConfig:
     #    du seuil, combiné en ET avec le filtre ci-dessus
     peak_threshold: float = 30
 
-    # ── Classification par nombre de pics isolés (windowing.py::classify_windows_by_peak_count) ──
-    # Méthode indépendante du filtrage ci-dessus : compte les pics isolés
-    # d'une fenêtre (point >> médiane locale du voisinage) pour la classer
-    # pic_1 / pic_2 / pic_3 / ... — calculée avant le passe-bas et la NCC.
-    peak_isolation_neighborhood: int = 50        # nb de points de part et d'autre pour la médiane locale
-    peak_isolation_factor: float = 20            # point = pic si |point| > facteur * médiane(|voisinage|)
-    peak_isolation_merge_gap: int = 2           # points-pics séparés de moins de X échantillons -> même pic
-    peak_isolation_low_level_pct: float = 0.90   # fraction du signal qui doit rester sous le seuil bas
-    peak_isolation_low_level_threshold: float = 20  # seuil "signal bas" (valeur absolue)
+    # ── Classification par nombre de pics isolés (windowing.py::classify_windows_by_peak_kmeans) ──
+    # Méthode indépendante du filtrage ci-dessus : segmente la fenêtre, score
+    # chaque segment par max(signal**4), sépare "pic" / "normal" par KMeans
+    # (2 clusters) pour classer la fenêtre pic_1 / pic_2 / pic_3 / ... —
+    # calculée avant le passe-bas et la NCC. Voir pic_kmeans_explorer.ipynb.
+    peak_kmeans_search_width: int = 1           # taille des segments (échantillons)
+    peak_kmeans_min_cluster_separation: float = 400  # centre_pic/centre_normal sous ce ratio -> pas de vrai pic
 
-
+    # ── Distinction "type pic" / "type pic + forme" (windowing.py::compute_window_energy) ──
+    # Parmi les fenêtres déjà classées "pic" ci-dessus, celles dont l'énergie
+    # (somme(|signal filtré médian|)) dépasse peak_energy_threshold comptent
+    # EN PLUS comme "type pic + forme" (flag additionnel, pas une reclassification
+    # exclusive) — seuil validé interactivement dans pic_kmeans_explorer.ipynb.
+    peak_energy_median_filter_size: int = 5
+    peak_energy_threshold: float = 10000
 
     # ── Seuils NCC / détection ───────────────────────────────────────
     ncc_threshold: float = 0.8
     ncc_max_lag: int = 5000
     ncc_type_threshold: float = 0.8
-    n_freq_bins: int = 200000
 
     # ── Filtrage passe-bas (avant calcul de similarité NCC) ──────────────
 
@@ -61,7 +64,6 @@ class SignalConfig:
 
     # ── Perf ──────────────────────────────────────────────────────────
     gpu_batch_size: int = 2048
-    freq_chunk: int = 100000
     num_workers: int = 4
 
 

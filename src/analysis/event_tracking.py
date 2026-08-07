@@ -103,7 +103,7 @@ def track_events_temporal_gpu(windows, is_anomaly, timestamps, threshold, max_la
 
 
 def precompute_all_metrics_gpu(anomaly_events, windows, windows_for_ncc, time_arrays,
-                                n_freq_bins, freq_chunk, ncc_max_lag):
+                                ncc_max_lag):
     """
     Calcule en batch GPU :
       - la fréquence dominante de CHAQUE fenêtre impliquée dans un événement
@@ -138,9 +138,7 @@ def precompute_all_metrics_gpu(anomaly_events, windows, windows_for_ncc, time_ar
     # ── Fréquences dominantes en batch ──────────────────────────────────
     sigs = windows[all_indices]
     times = time_arrays[all_indices]
-    dom_freqs = compute_dominant_frequency_batch_gpu(
-        sigs, times, n_freq=n_freq_bins, freq_chunk=freq_chunk
-    )
+    dom_freqs = compute_dominant_frequency_batch_gpu(sigs, times)
 
     # ── Top 4 fréquences dominantes des fenêtres de référence uniquement ────
     unique_ref_indices = np.unique(ref_indices)

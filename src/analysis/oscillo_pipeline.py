@@ -13,7 +13,8 @@ from src.io.datalake_reader import load_from_datalake
 from src.io.raw_file_loader import load_all_oscillo_files
 from src.io.profile_io import save_type_windows, serialize_signal_profile
 from src.signal_processing.windowing import (
-    filter_anomaly_windows, filter_by_peak_threshold, classify_windows_by_peak_count,
+    filter_anomaly_windows, filter_by_peak_threshold, classify_windows_by_peak_kmeans,
+    compute_window_energy,
 )
 from src.signal_processing.filtering import lowpass_filter_batch
 from src.analysis.event_tracking import track_events_temporal_gpu, precompute_all_metrics_gpu
@@ -98,27 +99,41 @@ class OscilloPipeline:
             is_anomaly = np.array([], dtype=int)
 
         # ── Classification par nombre de pics isolés (avant NCC) ─────────
-        # Méthode indépendante du filtrage ci-dessus : compte les pics isolés
-        # de chaque fenêtre (point >> médiane locale de son voisinage) pour
-        # la classer pic_1 / pic_2 / pic_3 / ... — voir classify_windows_by_peak_count.
+        # Méthode indépendante du filtrage ci-dessus : segmentation +
+        # KMeans sur max(signal**4) par segment pour classer chaque fenêtre
+        # pic_1 / pic_2 / pic_3 / ... — voir classify_windows_by_peak_kmeans.
         if len(windows) > 0:
             t0 = time.time()
-            peak_counts, peak_labels = classify_windows_by_peak_count(
+            peak_counts, peak_labels = classify_windows_by_peak_kmeans(
                 windows,
-                neighborhood_size=c.peak_isolation_neighborhood,
-                peak_factor=c.peak_isolation_factor,
-                merge_gap=c.peak_isolation_merge_gap,
-                low_level_pct=c.peak_isolation_low_level_pct,
-                low_level_threshold=c.peak_isolation_low_level_threshold,
+                search_width=c.peak_kmeans_search_width,
+                min_cluster_separation=c.peak_kmeans_min_cluster_separation,
             )
             n_classified = int(np.sum(peak_labels != ""))
             print(f"Fenêtres classées par nombre de pics : {n_classified} / {len(windows)} "
-                  f"(facteur={c.peak_isolation_factor}, seuil bas={c.peak_isolation_low_level_threshold}, "
-                  f"{c.peak_isolation_low_level_pct:.0%} du signal sous ce seuil)")
+                  f"(segments={c.peak_kmeans_search_width} éch., "
+                  f"séparation min={c.peak_kmeans_min_cluster_separation}x)")
             print(f"⏱️  Classification pics : {time.time()-t0:.2f}s")
         else:
             peak_counts = np.array([], dtype=int)
             peak_labels = np.array([], dtype=object)
+
+        # ── Énergie des fenêtres "pic" (windowing.py::compute_window_energy) ──
+        # Parmi les fenêtres classées "pic" ci-dessus, celles dont l'énergie
+        # (signal brut, filtre médian avant somme) dépasse peak_energy_threshold
+        # comptent EN PLUS comme "pic + forme" — flag additionnel, ne remplace
+        # pas la classification pic_N. Seuil validé dans pic_kmeans_explorer.ipynb.
+        if len(windows) > 0:
+            peak_energies = compute_window_energy(
+                windows, median_filter_size=c.peak_energy_median_filter_size
+            )
+            is_pic_forme = (peak_labels != "") & (peak_energies > c.peak_energy_threshold)
+            n_pic_forme = int(np.sum(is_pic_forme))
+            print(f"Fenêtres 'pic + forme' (énergie > {c.peak_energy_threshold}) : "
+                  f"{n_pic_forme} / {n_classified}")
+        else:
+            peak_energies = np.array([], dtype=float)
+            is_pic_forme = np.array([], dtype=bool)
 
         # ── Filtrage passe-bas (avant tout calcul de similarité NCC) ─────
         # Retire le bruit haute fréquence (> lowpass_cutoff_hz) qui pollue la
@@ -132,7 +147,7 @@ class OscilloPipeline:
             windows_ncc = windows
 
         # ── Isolement des fenêtres "pic" (avant tout calcul de similarité) ──
-        # Une fenêtre classée pic_N (voir classify_windows_by_peak_count) est
+        # Une fenêtre classée pic_N (voir classify_windows_by_peak_kmeans) est
         # exclue du groupement temporel NCC et deviendra directement un
         # événement à elle seule plus bas : on connaît déjà son type par le
         # comptage de pics, donc aucune comparaison de ressemblance (NCC)
@@ -171,6 +186,8 @@ class OscilloPipeline:
                     "debut": timestamps[i], "fin": timestamps[i],
                     "indices": [int(i)], "sims": [], "ref_idx": int(i),
                     "peak_label": str(peak_labels[i]),
+                    "peak_energy": float(peak_energies[i]),
+                    "peak_forme": bool(is_pic_forme[i]),
                 })
             if pic_events:
                 print(f"Total événements pic (isolés, sans NCC) : {len(pic_events)}")
@@ -190,7 +207,6 @@ class OscilloPipeline:
         if len(regular_events) > 0:
             dom_freq_map, ncc_map, _is_ref_map, dom_freqs4_map = precompute_all_metrics_gpu(
                 regular_events, windows, windows_ncc, time_arrays,
-                n_freq_bins=c.n_freq_bins, freq_chunk=c.freq_chunk,
                 ncc_max_lag=c.ncc_max_lag,
             )
         print(f"⏱️  Pré-calcul métriques : {time.time()-t0:.2f}s")
@@ -246,6 +262,7 @@ class OscilloPipeline:
                 dom_freqs4_map=dom_freqs4_map,
                 signal_id=signal_id,
                 peak_counts=peak_counts, peak_labels=peak_labels,
+                peak_energies=peak_energies, peak_forme=is_pic_forme,
                 type_labels=type_labels,
             )
 

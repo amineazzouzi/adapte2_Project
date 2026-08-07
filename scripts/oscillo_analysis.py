@@ -59,9 +59,7 @@ def parse_args():
     p.add_argument("--ncc-threshold", type=float, default=d.ncc_threshold)
     p.add_argument("--ncc-max-lag", type=int, default=d.ncc_max_lag)
     p.add_argument("--ncc-type-threshold", type=float, default=d.ncc_type_threshold)
-    p.add_argument("--n-freq-bins", type=int, default=d.n_freq_bins)
     p.add_argument("--gpu-batch-size", type=int, default=d.gpu_batch_size)
-    p.add_argument("--freq-chunk", type=int, default=d.freq_chunk)
     p.add_argument("--num-workers", type=int, default=d.num_workers)
     p.add_argument("--type-hist-bin-min", type=int, default=d.type_hist_bin_min,
                    help="Largeur des bins (minutes) de l'histogramme d'apparition "
@@ -94,9 +92,7 @@ def main():
         ncc_threshold=args.ncc_threshold,
         ncc_max_lag=args.ncc_max_lag,
         ncc_type_threshold=args.ncc_type_threshold,
-        n_freq_bins=args.n_freq_bins,
         gpu_batch_size=args.gpu_batch_size,
-        freq_chunk=args.freq_chunk,
         num_workers=args.num_workers,
         type_hist_bin_min=args.type_hist_bin_min,
         type_db_dir=args.type_db_dir,
