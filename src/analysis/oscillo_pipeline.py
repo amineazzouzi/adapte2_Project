@@ -98,25 +98,28 @@ class OscilloPipeline:
         else:
             is_anomaly = np.array([], dtype=int)
 
-        # ── Classification par nombre de pics isolés (avant NCC) ─────────
-        # Méthode indépendante du filtrage ci-dessus : segmentation +
-        # KMeans sur max(signal**4) par segment pour classer chaque fenêtre
-        # pic_1 / pic_2 / pic_3 / ... — voir classify_windows_by_peak_kmeans.
-        if len(windows) > 0:
+        # ── Classification par nombre de pics isolés (parmi les anomalies) ──
+        # Dépend du filtrage de l'étape précédente : seules les fenêtres
+        # retenues comme anomalies (is_anomaly) passent la segmentation +
+        # KMeans sur max(signal**4) par segment qui classe pic_1 / pic_2 /
+        # pic_3 / ... — voir classify_windows_by_peak_kmeans. Les fenêtres
+        # non-anomalies gardent peak_label="" sans passer par le KMeans.
+        peak_counts = np.zeros(len(windows), dtype=int)
+        peak_labels = np.full(len(windows), "", dtype=object)
+        anomaly_idx = np.flatnonzero(is_anomaly) if len(is_anomaly) > 0 else np.array([], dtype=int)
+        n_classified = 0
+        if len(anomaly_idx) > 0:
             t0 = time.time()
-            peak_counts, peak_labels = classify_windows_by_peak_kmeans(
-                windows,
+            peak_counts[anomaly_idx], peak_labels[anomaly_idx] = classify_windows_by_peak_kmeans(
+                windows[anomaly_idx],
                 search_width=c.peak_kmeans_search_width,
                 min_cluster_separation=c.peak_kmeans_min_cluster_separation,
             )
             n_classified = int(np.sum(peak_labels != ""))
-            print(f"Fenêtres classées par nombre de pics : {n_classified} / {len(windows)} "
+            print(f"Fenêtres classées par nombre de pics : {n_classified} / {len(anomaly_idx)} anomalies "
                   f"(segments={c.peak_kmeans_search_width} éch., "
                   f"séparation min={c.peak_kmeans_min_cluster_separation}x)")
             print(f"⏱️  Classification pics : {time.time()-t0:.2f}s")
-        else:
-            peak_counts = np.array([], dtype=int)
-            peak_labels = np.array([], dtype=object)
 
         # ── Énergie des fenêtres "pic" (windowing.py::compute_window_energy) ──
         # Parmi les fenêtres classées "pic" ci-dessus, celles dont l'énergie

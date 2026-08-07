@@ -25,10 +25,10 @@ class SignalConfig:
     # ── Filtrage anomalies par fenêtre (src/signal_processing/windowing.py) ──
     # 1. filter_anomaly_windows : amplitude locale moyenne (n_segments segments)
     anomaly_n_segments: int = 10
-    anomaly_threshold: float = 50
+    anomaly_threshold: float = 55
     # 2. filter_by_peak_threshold : pic positif ET pic négatif (abs) au-dessus
     #    du seuil, combiné en ET avec le filtre ci-dessus
-    peak_threshold: float = 30
+    peak_threshold: float = 0.0
 
     # ── Classification par nombre de pics isolés (windowing.py::classify_windows_by_peak_kmeans) ──
     # Méthode indépendante du filtrage ci-dessus : segmente la fenêtre, score

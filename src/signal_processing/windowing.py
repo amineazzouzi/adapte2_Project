@@ -100,11 +100,13 @@ def filter_by_peak_threshold(windows, threshold=30):
 def classify_windows_by_peak_kmeans(windows, search_width=10, min_cluster_separation=12):
     """
     Classe chaque fenêtre par nombre de pics isolés (pic_1, pic_2, pic_3, …)
-    par segmentation + KMeans — méthode indépendante de filter_anomaly_windows
-    / filter_by_peak_threshold, calculée avant le filtrage passe-bas et le
-    calcul de similarité NCC (le pic est un phénomène haute fréquence que le
-    passe-bas effacerait). Voir pic_kmeans_explorer.ipynb pour l'exploration
-    interactive de cette approche.
+    par segmentation + KMeans. Le critère de classement (score par segment)
+    est indépendant de celui de filter_anomaly_windows / filter_by_peak_threshold,
+    mais l'appelant (voir oscillo_pipeline.py) ne passe désormais que les
+    fenêtres déjà retenues comme anomalies — pas le batch complet. Calculée
+    avant le filtrage passe-bas et le calcul de similarité NCC (le pic est un
+    phénomène haute fréquence que le passe-bas effacerait). Voir
+    pic_kmeans_explorer.ipynb pour l'exploration interactive de cette approche.
 
     Pour chaque fenêtre :
       1. Découpe en segments de search_width échantillons.
